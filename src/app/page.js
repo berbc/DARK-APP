@@ -126,6 +126,10 @@ export default function DarkApp() {
   // Trending
   const [trendingTab,setTrendingTab]=useState("brasil");
 
+  // Local states that were incorrectly inside render blocks
+  const [dashIdeaInput,setDashIdeaInput]=useState("");
+  const [darkIdeaInput,setDarkIdeaInput]=useState("");
+
   // ── FLASH ──
   const flash=()=>{setSaved(true);setTimeout(()=>setSaved(false),2000);};
   const flashError=m=>{setErrorMsg(m);setTimeout(()=>setErrorMsg(""),4000);};
@@ -448,7 +452,6 @@ export default function DarkApp() {
         {activeTab===0&&(()=>{
           const nextTask=pendingTasks[0];
           const urgentTasks=pendingTasks.filter(t=>t.urgency==="hot");
-          const [ideaInput,setIdeaInput]=useState("");
           return(
             <div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
@@ -527,8 +530,8 @@ export default function DarkApp() {
                   <div style={{...card}}>
                     <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>💡 IDEIAS RÁPIDAS</div>
                     <div style={{display:"flex",gap:8,marginBottom:14}}>
-                      <input value={ideaInput} onChange={e=>setIdeaInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&ideaInput.trim()){saveIdea(ideaInput.trim());setIdeaInput("");}}} placeholder="Ideia para vídeo, pauta, tema..." style={{...inp,flex:1}}/>
-                      <button onClick={()=>{if(ideaInput.trim()){saveIdea(ideaInput.trim());setIdeaInput("");}}} style={btnGold}>+</button>
+                      <input value={dashIdeaInput} onChange={e=>setDashIdeaInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&dashIdeaInput.trim()){saveIdea(dashIdeaInput.trim());setDashIdeaInput("");}}} placeholder="Ideia para vídeo, pauta, tema..." style={{...inp,flex:1}}/>
+                      <button onClick={()=>{if(dashIdeaInput.trim()){saveIdea(dashIdeaInput.trim());setDashIdeaInput("");}}} style={btnGold}>+</button>
                     </div>
                     {ideas.filter(i=>!i.used).slice(0,5).map(i=>(
                       <div key={i.id} className="hover-row" style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${BORDER}`}}>
@@ -745,7 +748,6 @@ export default function DarkApp() {
 
         {/* ═══ CANAIS DARK ═══ */}
         {activeTab===3&&(()=>{
-          const [ideaInput,setIdeaInput]=useState("");
           const filteredVideos=pipelineFilter==="todos"?videos:videos.filter(v=>v.status===pipelineFilter);
           return(
             <div>
@@ -845,8 +847,8 @@ export default function DarkApp() {
                   <div style={card}>
                     <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:2,marginBottom:14}}>💡 BANCO DE IDEIAS</div>
                     <div style={{display:"flex",gap:8,marginBottom:16}}>
-                      <input value={ideaInput} onChange={e=>setIdeaInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&ideaInput.trim()){saveIdea(ideaInput.trim());setIdeaInput("");}}} placeholder="Nova ideia de vídeo..." style={{...inp,flex:1}}/>
-                      <button onClick={()=>{if(ideaInput.trim()){saveIdea(ideaInput.trim());setIdeaInput("");}}} style={btnGold}>+</button>
+                      <input value={darkIdeaInput} onChange={e=>setDarkIdeaInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&darkIdeaInput.trim()){saveIdea(darkIdeaInput.trim());setDarkIdeaInput("");}}} placeholder="Nova ideia de vídeo..." style={{...inp,flex:1}}/>
+                      <button onClick={()=>{if(darkIdeaInput.trim()){saveIdea(darkIdeaInput.trim());setDarkIdeaInput("");}}} style={btnGold}>+</button>
                     </div>
                     {ideas.filter(i=>!i.used).map(i=>(
                       <div key={i.id} className="hover-row" style={{display:"flex",alignItems:"center",gap:10,padding:"10px 6px",borderBottom:`1px solid ${BORDER}`}}>
