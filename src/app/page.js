@@ -510,7 +510,27 @@ export default function DarkApp(){
                 {ideas.filter(i=>!i.used).length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:12}}>Capture sua próxima ideia acima.</div>}
               </div>
             </div>
-            {weekTasks.length>0&&<div style={{...card,marginTop:14}}><div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",marginBottom:12,fontWeight:600}}>📅 ESTA SEMANA — {weekTasks.length} vencendo</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:8}}>{clients.map(c=>{const ct=weekTasks.filter(t=>t.client_id===c.id);if(!ct.length)return null;return(<div key={c.id} style={{background:BG3,borderRadius:8,padding:"10px 12px",borderLeft:`3px solid ${c.color||ACCENT}`}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontFamily:"'Bebas Neue'",fontSize:13,color:c.color||ACCENT}}>{c.name}</span><span style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:MUTED}}>{ct.length}x</span></div><div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ct[0]?.title}</div></div>);})}</div></div>}
+{weekTasks.length>0&&(
+              <div style={{...card,marginTop:14}}>
+                <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",marginBottom:12,fontWeight:600}}>📅 ESTA SEMANA — {weekTasks.length} vencendo</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:8}}>
+                  {clients.map(c=>{
+                    const ct=weekTasks.filter(t=>t.client_id===c.id);
+                    if(!ct.length)return null;
+                    const borderColor=c.color||ACCENT;
+                    return(
+                      <div key={c.id} style={{background:BG3,borderRadius:8,padding:"10px 12px",borderLeft:"3px solid "+borderColor}}>
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                          <span style={{fontFamily:"'Bebas Neue'",fontSize:13,color:borderColor}}>{c.name}</span>
+                          <span style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:MUTED}}>{ct.length}x</span>
+                        </div>
+                        <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ct[0]?.title}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         );
       })()}
@@ -1278,7 +1298,6 @@ export default function DarkApp(){
       )}
 
       </div>
-      {/* /content */}
 
       {/* FAB */}
       <button onClick={()=>setQuickCapture(true)} style={{position:"fixed",bottom:26,right:26,width:50,height:50,borderRadius:"50%",background:ACCENT,color:"#111",border:"none",cursor:"pointer",fontSize:22,fontWeight:700,boxShadow:`0 4px 18px ${ACCENT}50`,zIndex:100}} onMouseEnter={e=>e.currentTarget.style.transform="scale(1.1)"} onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>+</button>
