@@ -14,7 +14,7 @@ const btnGold={background:ACCENT,color:"#111",border:"none",borderRadius:6,paddi
 const btnGhost={background:"transparent",color:MUTED,border:`1px solid ${BOR}`,borderRadius:6,padding:"8px 18px",cursor:"pointer",fontFamily:"'DM Sans'",fontSize:13};
 
 // ─── CONSTANTS ───────────────────────────────────────────────
-const TABS=["🏠 Dashboard","⚡ Focus OS","🎯 Metas","📅 Agenda","🎬 Canais Dark","◈ Clientes","💰 Finanças","📚 Biblioteca","🔥 Trending"];
+const TABS=["🏠 Dashboard","⚡ Focus OS","🎯 Metas","📅 Agenda","🎬 Canais Dark","⭐ Sr. Waldemar","◈ Clientes","💰 Finanças","📚 Biblioteca","🔥 Trending"];
 const PIPELINE=["Roteiro","Locução","Geração de Imagens","Edição","Thumb e Título","Postagem"];
 const PIPELINE_COLORS={"Roteiro":ACCENT,"Locução":BLUE,"Geração de Imagens":PURP,"Edição":RED,"Thumb e Título":ORANGE,"Postagem":GREEN};
 const TASK_TYPES=["Roteiro","Gravação","Edição","Thumbnail","Revisão","Upload","Reunião","Pesquisa","Postagem"];
@@ -160,7 +160,7 @@ export default function DarkApp(){
     setLoading(true);
     try{
       const[cl,tk,vi,id,inv,go,lib,us,ld,rc,te,ni]=await Promise.all([
-        supabase.from("clients").select("*").eq("active",true).order("name"),
+        supabase.from("clients").select("*").eq("active",true).order("name").order("created_at"),
         supabase.from("tasks").select("*").order("deadline",{ascending:true,nullsLast:true}),
         supabase.from("videos").select("*").order("created_at",{ascending:false}),
         supabase.from("ideas").select("*").order("created_at",{ascending:false}),
@@ -185,7 +185,7 @@ export default function DarkApp(){
       if(te.data)setTimeEntries(te.data);
       if(us.data?.[0])setUserStats(us.data[0]);
       else{const{data:ns}=await supabase.from("user_stats").insert({xp:0,level:1,streak:0,tasks_completed:0,pomodoros_completed:0,last_active:today()}).select().single();if(ns)setUserStats(ns);}
-      if(ni.data&&ni.data.length>0)setNiches(ni.data);
+      if(ni.data&&ni.data.length>0){const seen=new Set();const unique=ni.data.filter(n=>{if(seen.has(n.name))return false;seen.add(n.name);return true;});setNiches(unique);}
       else{
         const{data:inserted}=await supabase.from("niches").insert(DEFAULT_NICHES.map((n,i)=>({...n,sort_order:i}))).select();
         if(inserted)setNiches(inserted);else setNiches(DEFAULT_NICHES.map((n,i)=>({...n,id:i,sort_order:i})));
@@ -351,6 +351,7 @@ export default function DarkApp(){
   };
   const saveQuickIdea=async(title)=>{const{data}=await supabase.from("ideas").insert({title,source:"quick"}).select().single();if(data)setIdeas(prev=>[data,...prev]);flash();};
   const deleteIdea=async(id)=>{await supabase.from("ideas").delete().eq("id",id);setIdeas(prev=>prev.filter(i=>i.id!==id));};
+  const restoreIdea=async(id)=>{const{data}=await supabase.from("ideas").update({used:false}).eq("id",id).select().single();if(data)setIdeas(prev=>prev.map(i=>i.id===data.id?data:i));flash();};
   const useIdeaAsVideo=async(idea)=>{const dc=clients.find(c=>c.name==="Canais Dark");const{data}=await supabase.from("videos").insert({title:idea.title,niche:idea.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:dc?.id,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
   const saveRefChannel=async()=>{
     if(!refChannelEdit?.name?.trim())return;let data;
@@ -440,7 +441,7 @@ export default function DarkApp(){
         return(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22}}>
-              <div><div style={{fontFamily:"'Bebas Neue'",fontSize:30,letterSpacing:1}}>BOM DIA, <span style={{color:ACCENT}}>BERNARDO.</span></div><div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED,marginTop:4}}>{new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long"})} · {pendingTasks.length} pendentes</div></div>
+              <div><div style={{fontFamily:"'Bebas Neue'",fontSize:30,letterSpacing:1}}>{(()=>{const h=new Date().getHours();return h<12?"BOM DIA,":h<18?"BOA TARDE,":"BOA NOITE,"})()} <span style={{color:ACCENT}}>BERNARDO.</span></div><div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED,marginTop:4}}>{new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long"})} · {pendingTasks.length} pendentes</div></div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:14}}>
               {/* HOJE */}
@@ -466,9 +467,9 @@ export default function DarkApp(){
                   </div>
                 ))}
               </div>
-              {/* FINANCEIRO */}
-              <div style={card}>
-                <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",marginBottom:10,fontWeight:600}}>💰 FINANCEIRO — {thisMonthKey}</div>
+              {/* FINANCEIRO - removido do dashboard a pedido */}
+              <div style={{display:"none"}}>
+                <div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
                   {[{l:"A receber",v:invoices.filter(i=>i.status==="pendente"&&i.issued_date?.startsWith(thisMonthKey)).reduce((s,i)=>s+(i.amount||0),0),c:ACCENT},{l:"Recebido",v:invoices.filter(i=>i.status==="pago"&&i.issued_date?.startsWith(thisMonthKey)).reduce((s,i)=>s+(i.amount||0),0),c:GREEN},{l:"Vencido",v:totalVencido,c:RED},{l:"Emitido",v:invoices.filter(i=>i.issued_date?.startsWith(thisMonthKey)).reduce((s,i)=>s+(i.amount||0),0),c:TEXT}].map(m=>(
                     <div key={m.l} style={{background:BG3,borderRadius:7,padding:"9px 10px",cursor:"pointer"}} onClick={()=>setActiveTab(6)}>
@@ -738,7 +739,16 @@ export default function DarkApp(){
                   ))}
                   {ideas.filter(i=>!i.used).length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:16}}>Banco vazio.</div>}
                 </div>
-                <div style={card}><div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:2,marginBottom:12}}>✓ USADAS</div>{ideas.filter(i=>i.used).map(i=><div key={i.id} style={{padding:"6px 0",borderBottom:`1px solid ${BOR}`,opacity:.4}}><div style={{fontFamily:"'DM Sans'",fontSize:12,textDecoration:"line-through"}}>{i.title}</div></div>)}</div>
+                <div style={card}>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:2,marginBottom:12}}>✓ USADAS</div>
+                  {ideas.filter(i=>i.used).map(i=>(
+                    <div key={i.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderBottom:`1px solid ${BOR}`}}>
+                      <div style={{flex:1,fontFamily:"'DM Sans'",fontSize:12,textDecoration:"line-through",opacity:.5}}>{i.title}</div>
+                      <button onClick={()=>restoreIdea(i.id)} style={{...btnGhost,padding:"2px 8px",fontSize:10,color:ACCENT,borderColor:`${ACCENT}33`,flexShrink:0}}>↩ devolver</button>
+                    </div>
+                  ))}
+                  {ideas.filter(i=>i.used).length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED}}>Nenhuma ideia usada ainda.</div>}
+                </div>
               </div>
             )}
 
@@ -828,8 +838,164 @@ export default function DarkApp(){
         );
       })()}
 
+
+      {/* ═══ SR. WALDEMAR ═══ */}
+      {activeTab===5&&(()=>{
+        const wIdeas=ideas.filter(i=>i.niche==="Sr. Waldemar"||i.source==="waldemar");
+        const wVideos=videos.filter(v=>v.client_id===clients.find(c=>c.name==="Sr. Waldemar")?.id);
+        const [wSection,setWSection]=useState("ideias");
+        const [wInput,setWInput]=useState("");
+        const FLAMENGO_CATEGORIES=[
+          {name:"História",icon:"📜",color:RED},
+          {name:"Jogadores Lendários",icon:"⚽",color:ACCENT},
+          {name:"Partidas Históricas",icon:"🏆",color:GREEN},
+          {name:"Mascote & Símbolos",icon:"🦅",color:ORANGE},
+          {name:"Fundação & Origem",icon:"🏛",color:BLUE},
+          {name:"Rivalidades",icon:"🔥",color:RED},
+          {name:"Títulos",icon:"🥇",color:ACCENT},
+          {name:"Curiosidades",icon:"💡",color:PURP},
+        ];
+        const IDEA_SEEDS=[
+          {title:"A história secreta da fundação do Flamengo em 1895",niche:"Sr. Waldemar",category:"Fundação & Origem"},
+          {title:"Zico: o maior jogador da história do Flamengo",niche:"Sr. Waldemar",category:"Jogadores Lendários"},
+          {title:"A maior goleada da história do Flamengo",niche:"Sr. Waldemar",category:"Partidas Históricas"},
+          {title:"O Urubu: a história do mascote mais famoso do Brasil",niche:"Sr. Waldemar",category:"Mascote & Símbolos"},
+          {title:"Flamengo x Fluminense: a maior rivalidade do Rio",niche:"Sr. Waldemar",category:"Rivalidades"},
+          {title:"Libertadores 2019: a noite que parou o Brasil",niche:"Sr. Waldemar",category:"Títulos"},
+          {title:"Por que o Flamengo tem mais torcedores que qualquer time do mundo?",niche:"Sr. Waldemar",category:"Curiosidades"},
+          {title:"Adriano Imperador: ascensão e queda de um gênio",niche:"Sr. Waldemar",category:"Jogadores Lendários"},
+          {title:"A história da Gávea: o CT mais famoso do futebol brasileiro",niche:"Sr. Waldemar",category:"História"},
+          {title:"Gabigol: o herói que virou lenda em uma noite",niche:"Sr. Waldemar",category:"Jogadores Lendários"},
+        ];
+        const saveWIdea=async(title,category)=>{
+          const{data}=await supabase.from("ideas").insert({title,niche:"Sr. Waldemar",description:category||"",source:"waldemar"}).select().single();
+          if(data)setIdeas(prev=>[data,...prev]);flash();
+        };
+        return(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:2}}>⭐ SR. WALDEMAR</div>
+                <div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED}}>AI Entertainment · Flamengo · Conteúdo em PT/EN/ES</div>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                {["ideias","pipeline","stats"].map(s=><button key={s} onClick={()=>setWSection(s)} style={{...btnGhost,color:wSection===s?ACCENT:MUTED,borderColor:wSection===s?`${ACCENT}44`:BOR,fontSize:12}}>{s==="ideias"?"💡 Ideias":s==="pipeline"?"🎬 Pipeline":"📊 Stats"}</button>)}
+                <button onClick={()=>createVideo({niche:"Sr. Waldemar",client_id:clients.find(c=>c.name==="Sr. Waldemar")?.id})} style={btnGold}>+ NOVO VÍDEO</button>
+              </div>
+            </div>
+
+            {wSection==="ideias"&&(
+              <div>
+                {/* Quick capture */}
+                <div style={{...card,marginBottom:16}}>
+                  <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>CAPTURAR IDEIA</div>
+                  <div style={{display:"flex",gap:8}}>
+                    <input value={wInput} onChange={e=>setWInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&wInput.trim()){saveWIdea(wInput.trim());setWInput("");}}} placeholder="Nova ideia sobre Flamengo..." style={{...inp,flex:1}}/>
+                    <button onClick={()=>{if(wInput.trim()){saveWIdea(wInput.trim());setWInput("");}}} style={btnGold}>+</button>
+                  </div>
+                </div>
+
+                {/* Category grid */}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14,marginBottom:20}}>
+                  {FLAMENGO_CATEGORIES.map(cat=>{
+                    const catIdeas=ideas.filter(i=>(i.niche==="Sr. Waldemar"||i.source==="waldemar")&&(i.description===cat.name||i.category===cat.name)&&!i.used);
+                    return(
+                      <div key={cat.name} style={{...card,borderLeft:`3px solid ${cat.color}`,marginBottom:0}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                          <div style={{fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:1}}>{cat.icon} {cat.name}</div>
+                          <span style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:MUTED}}>{catIdeas.length} ideias</span>
+                        </div>
+                        {catIdeas.slice(0,3).map(i=>(
+                          <div key={i.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:`1px solid ${BOR}`}}>
+                            <div style={{flex:1,fontFamily:"'DM Sans'",fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.title}</div>
+                            <button onClick={()=>useIdeaAsVideo(i)} style={{...btnGhost,padding:"1px 7px",fontSize:10,color:GREEN,borderColor:`${GREEN}33`,flexShrink:0}}>→</button>
+                            <button onClick={()=>deleteIdea(i.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:11}}>✕</button>
+                          </div>
+                        ))}
+                        {catIdeas.length===0&&(
+                          <button onClick={()=>saveWIdea(IDEA_SEEDS.find(s=>s.category===cat.name)?.title||`Ideia sobre ${cat.name}`,cat.name)} style={{...btnGhost,width:"100%",fontSize:11,color:cat.color,borderColor:`${cat.color}33`}}>+ Sugestão automática</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Todas as ideias */}
+                {ideas.filter(i=>(i.niche==="Sr. Waldemar"||i.source==="waldemar")&&!i.used).length>0&&(
+                  <div style={card}>
+                    <div style={{fontFamily:"'Bebas Neue'",fontSize:15,letterSpacing:2,marginBottom:12}}>TODAS AS IDEIAS ({ideas.filter(i=>(i.niche==="Sr. Waldemar"||i.source==="waldemar")&&!i.used).length})</div>
+                    {ideas.filter(i=>(i.niche==="Sr. Waldemar"||i.source==="waldemar")&&!i.used).map(i=>(
+                      <div key={i.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderBottom:`1px solid ${BOR}`}}>
+                        <div style={{flex:1}}>
+                          <div style={{fontFamily:"'DM Sans'",fontSize:13,fontWeight:500}}>{i.title}</div>
+                          {i.description&&<div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{i.description}</div>}
+                        </div>
+                        <button onClick={()=>useIdeaAsVideo(i)} style={{...btnGhost,padding:"2px 8px",fontSize:10,color:GREEN,borderColor:`${GREEN}33`}}>usar →</button>
+                        <button onClick={()=>deleteIdea(i.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:12}}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Seed suggestions */}
+                <div style={{...card,marginTop:14}}>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:2,marginBottom:12}}>💡 SUGESTÕES PRONTAS — CLIQUE PARA ADICIONAR</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                    {IDEA_SEEDS.filter(s=>!ideas.find(i=>i.title===s.title)).map((s,idx)=>(
+                      <button key={idx} onClick={()=>saveWIdea(s.title,s.category)} style={{...btnGhost,fontSize:11,padding:"5px 12px",color:ACCENT,borderColor:`${ACCENT}33`,textAlign:"left"}}>+ {s.title}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {wSection==="pipeline"&&(
+              <div>
+                <div style={{overflowX:"auto",paddingBottom:8}}>
+                  <div style={{display:"flex",gap:10,minWidth:"max-content"}}>
+                    {PIPELINE.map(status=>{
+                      const colVids=wVideos.filter(v=>v.status===status);const color=PIPELINE_COLORS[status];
+                      return(
+                        <div key={status} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const id=e.dataTransfer.getData("vid");if(id)moveVideo(id,status);}} style={{width:220,flexShrink:0,background:BG3,border:`1px solid ${BOR}`,borderRadius:10,overflow:"hidden",minHeight:240}}>
+                          <div style={{padding:"9px 10px 7px",borderBottom:`2px solid ${color}`,background:`${color}10`}}><div style={{fontFamily:"'Bebas Neue'",fontSize:13,letterSpacing:1,color}}>{status}</div><div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED}}>{colVids.length}</div></div>
+                          <div style={{padding:6,display:"flex",flexDirection:"column",gap:5}}>
+                            {colVids.map(v=>(
+                              <div key={v.id} draggable onDragStart={e=>e.dataTransfer.setData("vid",v.id)} onClick={()=>setVideoDetailModal({...v})} style={{background:CARD,border:`1px solid ${BOR}`,borderRadius:7,padding:"9px 10px",cursor:"pointer"}} className="hc">
+                                <div style={{fontFamily:"'DM Sans'",fontSize:11,fontWeight:600,lineHeight:1.3,marginBottom:4}}>{v.meu_titulo||v.title}</div>
+                                {v.publish_date&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>📅 {fmtDate(v.publish_date)}</div>}
+                              </div>
+                            ))}
+                            {colVids.length===0&&<div style={{color:HINT,fontSize:11,textAlign:"center",padding:14}}>Arraste aqui</div>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {wSection==="stats"&&(
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
+                {[
+                  {l:"Total de vídeos",v:wVideos.length,c:ACCENT},
+                  {l:"Publicados",v:wVideos.filter(v=>v.status==="Postagem").length,c:GREEN},
+                  {l:"Em produção",v:wVideos.filter(v=>v.status!=="Postagem").length,c:BLUE},
+                  {l:"Ideias no banco",v:ideas.filter(i=>i.niche==="Sr. Waldemar"||i.source==="waldemar").length,c:PURP},
+                ].map(s=>(
+                  <div key={s.l} style={card}>
+                    <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>{s.l}</div>
+                    <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:s.c}}>{s.v}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* ═══ CLIENTES ═══ */}
-      {activeTab===5&&(
+      {activeTab===6&&(
         <div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
             <div style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:2}}>CLIENTES</div>
@@ -926,7 +1092,7 @@ export default function DarkApp(){
       )}
 
       {/* ═══ FINANÇAS ═══ */}
-      {activeTab===6&&(()=>{
+      {activeTab===7&&(()=>{
         const SC={pendente:ACCENT,pago:GREEN,vencido:RED,cancelado:MUTED};
         const filtered=periodInvoices.filter(i=>invoiceFilter==="todos"||i.status===invoiceFilter).sort((a,b)=>(a.due_date||"").localeCompare(b.due_date||""));
         const MONTHS_LABELS=["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -991,8 +1157,8 @@ export default function DarkApp(){
             </div>
 
             <div style={card}>
-              <div style={{display:"grid",gridTemplateColumns:"70px 1fr 110px 110px 95px 85px auto",padding:"5px 10px",borderBottom:`1px solid ${BOR}`,fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase"}}>
-                <div>NF</div><div>Descrição</div><div>Cliente</div><div style={{textAlign:"right"}}>Valor</div><div style={{textAlign:"center"}}>Vencimento</div><div style={{textAlign:"center"}}>Status</div><div/>
+              <div style={{display:"grid",gridTemplateColumns:"70px 1fr 120px 120px 100px 90px 120px",padding:"5px 10px",borderBottom:`1px solid ${BOR}`,fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase"}}>
+                <div>NF</div><div>Descrição</div><div>Cliente</div><div style={{textAlign:"right"}}>Valor</div><div style={{textAlign:"center"}}>Vencimento</div><div style={{textAlign:"center"}}>Status</div><div style={{textAlign:"center"}}>Ações</div>
               </div>
               {filtered.length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:28}}>Nenhuma nota fiscal neste período.</div>}
               {filtered.map(i=>(
@@ -1023,7 +1189,7 @@ export default function DarkApp(){
       })()}
 
       {/* ═══ BIBLIOTECA ═══ */}
-      {activeTab===7&&(()=>{
+      {activeTab===8&&(()=>{
         const TC={hook:ACCENT,titulo:BLUE,cta:GREEN,thumbnail:PURP,template:RED};
         const TI={hook:"🎣",titulo:"📰",cta:"📣",thumbnail:"🖼",template:"📄"};
         const filtered=library.filter(l=>libFilter==="todos"||l.type===libFilter).filter(l=>!libSearch||l.content.toLowerCase().includes(libSearch.toLowerCase()));
@@ -1049,7 +1215,7 @@ export default function DarkApp(){
       })()}
 
       {/* ═══ TRENDING ═══ */}
-      {activeTab===8&&(
+      {activeTab===9&&(
         <div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
             <div><div style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:2}}>🔥 TRENDING YOUTUBE</div>{lastUpdated&&<div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,marginTop:4}}>Atualizado: {lastUpdated.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</div>}</div>
