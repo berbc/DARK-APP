@@ -139,6 +139,8 @@ export default function DarkApp(){
   const [ideaModal,setIdeaModal]=useState(false);
   const [ideaEdit,setIdeaEdit]=useState(null);
   const [trendingTab,setTrendingTab]=useState("brasil");
+  const [wSection,setWSection]=useState("ideias");
+  const [wInput,setWInput]=useState("");
   const [refChannelModal,setRefChannelModal]=useState(false);
   const [refChannelEdit,setRefChannelEdit]=useState(null);
   const [nicheModal,setNicheModal]=useState(false);
@@ -843,8 +845,6 @@ export default function DarkApp(){
       {activeTab===5&&(()=>{
         const wIdeas=ideas.filter(i=>i.niche==="Sr. Waldemar"||i.source==="waldemar");
         const wVideos=videos.filter(v=>v.client_id===clients.find(c=>c.name==="Sr. Waldemar")?.id);
-        const [wSection,setWSection]=useState("ideias");
-        const [wInput,setWInput]=useState("");
         const FLAMENGO_CATEGORIES=[
           {name:"História",icon:"📜",color:RED},
           {name:"Jogadores Lendários",icon:"⚽",color:ACCENT},
@@ -1277,7 +1277,8 @@ export default function DarkApp(){
         </div>
       )}
 
-      </div>{/* /content */}
+      </div>
+      {/* /content */}
 
       {/* FAB */}
       <button onClick={()=>setQuickCapture(true)} style={{position:"fixed",bottom:26,right:26,width:50,height:50,borderRadius:"50%",background:ACCENT,color:"#111",border:"none",cursor:"pointer",fontSize:22,fontWeight:700,boxShadow:`0 4px 18px ${ACCENT}50`,zIndex:100}} onMouseEnter={e=>e.currentTarget.style.transform="scale(1.1)"} onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>+</button>
