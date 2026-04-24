@@ -1227,7 +1227,14 @@ export default function DarkApp(){
       </div></div>}
 
       {/* Confetti */}
-      {confetti&&<div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:9999}}>{Array.from({length:20},(_,i)=><div key={i} style={{position:"absolute",left:`${Math.random()*100}vw`,top:"-10px",width:7,height:7,borderRadius:2,background:[ACCENT,GREEN,BLUE,RED,PURP][i%5],animation:`cf ${1+Math.random()}s ease-in ${Math.random()*.5}s forwards`}}/>)<style>{`@keyframes cf{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(100vh) rotate(720deg);opacity:0}}`}</style></div>}
+      {confetti&&(
+        <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:9999}}>
+          {Array.from({length:20},(_,i)=>(
+            <div key={i} style={{position:"absolute",left:(Math.random()*100)+"vw",top:"-10px",width:7,height:7,borderRadius:2,background:[ACCENT,GREEN,BLUE,RED,PURP][i%5],animation:"cf "+(1+Math.random())+"s ease-in "+(Math.random()*.5)+"s forwards"}}/>
+          ))}
+          <style dangerouslySetInnerHTML={{__html:"@keyframes cf{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(100vh) rotate(720deg);opacity:0}}"}}/>
+        </div>
+      )}
 
     </div>
   );
