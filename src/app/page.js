@@ -409,7 +409,7 @@ export default function DarkApp(){
 
   return(
     <div style={{background:BG,minHeight:"100vh",color:TEXT}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');*{box-sizing:border-box;margin:0;padding:0;}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:#3A3A3E;border-radius:2px}.hr:hover{background:${SURF2||"#323235"}!important}.hc:hover{transform:translateY(-1px);border-color:${BOR2}!important}input:focus,textarea:focus,select:focus{border-color:${ACCENT}!important;outline:none}textarea{resize:vertical}`}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');*{box-sizing:border-box;margin:0;padding:0;}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:#3A3A3E;border-radius:2px}.hr:hover{background:#323235!important}.hc:hover{transform:translateY(-1px);border-color:${BOR2}!important}input:focus,textarea:focus,select:focus{border-color:${ACCENT}!important;outline:none}textarea{resize:vertical}`}</style>
 
       {/* HEADER */}
       <div style={{background:BG2,borderBottom:`1px solid ${BOR}`,padding:"0 24px",display:"flex",alignItems:"center",height:54,position:"sticky",top:0,zIndex:50,gap:16}}>
