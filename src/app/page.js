@@ -125,8 +125,23 @@ export default function DarkApp() {
 
   // Trending
   const [trendingTab,setTrendingTab]=useState("brasil");
+  const [trendingNicheChannel,setTrendingNicheChannel]=useState(null);
+  const [channelVideos,setChannelVideos]=useState({});
+  const [channelLoading,setChannelLoading]=useState(null);
+  const [refChannels,setRefChannels]=useState([]);
+  const [refChannelModal,setRefChannelModal]=useState(false);
+  const [refChannelEdit,setRefChannelEdit]=useState(null);
+  const [useAsBaseModal,setUseAsBaseModal]=useState(null);
 
-  // Local states that were incorrectly inside render blocks
+  // Video detail modal (Canais Dark)
+  const [videoDetailModal,setVideoDetailModal]=useState(null);
+
+  // Leads
+  const [leads,setLeads]=useState([]);
+  const [leadModal,setLeadModal]=useState(false);
+  const [leadEdit,setLeadEdit]=useState(null);
+
+  // Local states
   const [dashIdeaInput,setDashIdeaInput]=useState("");
   const [darkIdeaInput,setDarkIdeaInput]=useState("");
 
@@ -173,6 +188,18 @@ export default function DarkApp() {
     setLoading(false);
   },[]);
   useEffect(()=>{if(user)loadAll();},[user,loadAll]);
+
+  const loadLeads=useCallback(async()=>{
+    const{data}=await supabase.from("leads").select("*").order("created_at",{ascending:false});
+    if(data)setLeads(data);
+  },[]);
+  useEffect(()=>{if(user)loadLeads();},[user,loadLeads]);
+
+  const loadRefChannels=useCallback(async()=>{
+    const{data}=await supabase.from("ref_channels").select("*").order("niche,name");
+    if(data)setRefChannels(data);
+  },[]);
+  useEffect(()=>{if(user)loadRefChannels();},[user,loadRefChannels]);
 
   // ── TRENDING ──
   const fetchTrending=useCallback(async()=>{
@@ -371,6 +398,106 @@ export default function DarkApp() {
   const saveIdea=async(title,niche="")=>{const{data}=await supabase.from("ideas").insert({title,niche,source:"manual"}).select().single();if(data)setIdeas(prev=>[data,...prev]);flash();};
   const deleteIdea=async(id)=>{await supabase.from("ideas").delete().eq("id",id);setIdeas(prev=>prev.filter(i=>i.id!==id));};
 
+  // ── LEADS ──
+  const saveLead=async()=>{
+    if(!leadEdit?.name?.trim())return;
+    let data;
+    if(leadEdit.id){const r=await supabase.from("leads").update(leadEdit).eq("id",leadEdit.id).select().single();data=r.data;if(data)setLeads(prev=>prev.map(l=>l.id===data.id?data:l));}
+    else{const r=await supabase.from("leads").insert(leadEdit).select().single();data=r.data;if(data)setLeads(prev=>[data,...prev]);}
+    setLeadModal(false);setLeadEdit(null);flash();
+  };
+  const deleteLead=async(id)=>{await supabase.from("leads").delete().eq("id",id);setLeads(prev=>prev.filter(l=>l.id!==id));};
+  const convertLead=async(lead)=>{
+    const{data}=await supabase.from("clients").insert({name:lead.name,color:ACCENT,type:"YouTube",frequency:"",rate_per_hour:0,notes:lead.notes||"",active:true}).select().single();
+    if(data){
+      setClients(prev=>[...prev,data]);
+      await supabase.from("leads").update({converted:true,client_id:data.id}).eq("id",lead.id);
+      setLeads(prev=>prev.map(l=>l.id===lead.id?{...l,converted:true,client_id:data.id}:l));
+      flash();
+    }
+  };
+
+  // ── REF CHANNELS ──
+  const saveRefChannel=async()=>{
+    if(!refChannelEdit?.name?.trim())return;
+    let data;
+    if(refChannelEdit.id){const r=await supabase.from("ref_channels").update(refChannelEdit).eq("id",refChannelEdit.id).select().single();data=r.data;if(data)setRefChannels(prev=>prev.map(c=>c.id===data.id?data:c));}
+    else{const r=await supabase.from("ref_channels").insert(refChannelEdit).select().single();data=r.data;if(data)setRefChannels(prev=>[...prev,data]);}
+    setRefChannelModal(false);setRefChannelEdit(null);flash();
+  };
+  const deleteRefChannel=async(id)=>{await supabase.from("ref_channels").delete().eq("id",id);setRefChannels(prev=>prev.filter(c=>c.id!==id));};
+
+  // ── FETCH CHANNEL VIDEOS ──
+  const fetchChannelVideos=async(channel)=>{
+    const apiKey=process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
+    if(!apiKey||!channel.channel_id||channelVideos[channel.id])return;
+    setChannelLoading(channel.id);
+    try{
+      const res=await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channel.channel_id}&order=viewCount&maxResults=10&type=video&key=${apiKey}`);
+      const d=await res.json();
+      const ids=(d.items||[]).map(i=>i.id?.videoId).filter(Boolean).join(",");
+      if(!ids){setChannelLoading(null);return;}
+      const stats=await fetch(`https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id=${ids}&key=${apiKey}`);
+      const sd=await stats.json();
+      const vids=(sd.items||[]).map(v=>({
+        id:v.id,title:v.snippet?.title,channel:v.snippet?.channelTitle,
+        thumb:v.snippet?.thumbnails?.medium?.url,
+        views:parseInt(v.statistics?.viewCount||0),
+        url:`https://youtube.com/watch?v=${v.id}`,
+      })).sort((a,b)=>b.views-a.views);
+      setChannelVideos(prev=>({...prev,[channel.id]:vids}));
+    }catch(e){flashError("Erro ao buscar vídeos do canal");}
+    setChannelLoading(null);
+  };
+
+  // ── USE VIDEO AS BASE ──
+  const useVideoAsBase=async(refVideo,niche)=>{
+    const darkClient=clients.find(c=>c.name==="Canais Dark");
+    const{data}=await supabase.from("videos").insert({
+      title:refVideo.title,
+      niche:niche||"Curiosidades Gerais",
+      status:"Roteiro",
+      client_id:darkClient?.id,
+      ref_titulo:refVideo.title,
+      ref_thumb:refVideo.thumb,
+      ref_url:refVideo.url,
+      ref_canal:refVideo.channel,
+      ref_views:refVideo.views||0,
+    }).select().single();
+    if(data){
+      setVideos(prev=>[data,...prev]);
+      setVideoDetailModal(data);
+      setUseAsBaseModal(null);
+      flash();
+    }
+  };
+
+  // ── SAVE VIDEO DETAIL ──
+  const saveVideoDetail=async(videoData)=>{
+    if(!videoData?.id)return;
+    const{data}=await supabase.from("videos").update({
+      title:videoData.title,
+      niche:videoData.niche,
+      status:videoData.status,
+      publish_date:videoData.publish_date||null,
+      platforms:videoData.platforms||[],
+      meu_titulo:videoData.meu_titulo||"",
+      minha_thumbnail:videoData.minha_thumbnail||"",
+      transcricao:videoData.transcricao||"",
+      meu_roteiro:videoData.meu_roteiro||"",
+      descricao_yt:videoData.descricao_yt||"",
+      drive_locuçao:videoData.drive_locuçao||"",
+      hook:videoData.hook||"",
+      notes:videoData.notes||"",
+      ref_titulo:videoData.ref_titulo||"",
+      ref_thumb:videoData.ref_thumb||"",
+      ref_url:videoData.ref_url||"",
+      ref_canal:videoData.ref_canal||"",
+      ref_views:videoData.ref_views||0,
+    }).eq("id",videoData.id).select().single();
+    if(data){setVideos(prev=>prev.map(v=>v.id===data.id?data:v));setVideoDetailModal(data);flash();}
+  };
+
   // ── COMPUTED ──
   const pendingTasks=tasks.filter(t=>!t.done).sort((a,b)=>taskScore(b)-taskScore(a));
   const thisMonthKey=`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`;
@@ -488,6 +615,23 @@ export default function DarkApp() {
 
               <div style={{display:"grid",gridTemplateColumns:"1fr 340px",gap:20}}>
                 <div>
+                  {/* Follow-up leads vencidos */}
+                  {leads.filter(l=>!l.converted&&l.follow_up_date&&deadlineDiff(l.follow_up_date)<=0).length>0&&(
+                    <div style={{...card,marginBottom:16,borderColor:`${ACCENT}44`}}>
+                      <div style={{fontFamily:"'DM Sans'",fontSize:11,color:ACCENT,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>🔔 FOLLOW-UP PENDENTE</div>
+                      {leads.filter(l=>!l.converted&&l.follow_up_date&&deadlineDiff(l.follow_up_date)<=0).map(lead=>(
+                        <div key={lead.id} className="hover-row" onClick={()=>setActiveTab(4)} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${BORDER}`,cursor:"pointer"}}>
+                          <div style={{flex:1}}>
+                            <div style={{fontFamily:"'DM Sans'",fontSize:13,fontWeight:500}}>{lead.name}</div>
+                            <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{lead.service||"Lead"} · {lead.contact}</div>
+                          </div>
+                          {lead.proposed_value>0&&<span style={{fontFamily:"'IBM Plex Mono'",fontSize:11,color:ACCENT,flexShrink:0}}>R$ {lead.proposed_value.toLocaleString("pt-BR",{minimumFractionDigits:0})}</span>}
+                          <span style={{background:`${RED}22`,color:RED,border:`1px solid ${RED}44`,borderRadius:4,padding:"2px 6px",fontSize:10,fontWeight:600,flexShrink:0}}>follow-up!</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Urgentes */}
                   {urgentTasks.length>0&&(
                     <div style={{...card,marginBottom:16}}>
@@ -754,8 +898,8 @@ export default function DarkApp() {
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
                 <div style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:2}}>CANAIS DARK</div>
                 <div style={{display:"flex",gap:8}}>
-                  {["pipeline","ideias","nichos"].map(s=>(
-                    <button key={s} onClick={()=>setDarkSection(s)} style={{...btnGhost,color:darkSection===s?ACCENT:MUTED,borderColor:darkSection===s?`${ACCENT}44`:BORDER}}>{s.charAt(0).toUpperCase()+s.slice(1)}</button>
+                  {["pipeline","ideias","nichos","referencias"].map(s=>(
+                    <button key={s} onClick={()=>setDarkSection(s)} style={{...btnGhost,color:darkSection===s?ACCENT:MUTED,borderColor:darkSection===s?`${ACCENT}44`:BORDER}}>{s==="referencias"?"Referências":s.charAt(0).toUpperCase()+s.slice(1)}</button>
                   ))}
                   <button onClick={()=>{setVideoEdit({title:"",niche:"Curiosidades Gerais",status:"Roteiro",hook:"",notes:""});setVideoModal(true);}} style={btnGold}>+ NOVO VÍDEO</button>
                 </div>
@@ -791,20 +935,17 @@ export default function DarkApp() {
                             <div style={{padding:8,display:"flex",flexDirection:"column",gap:6}}>
                               {colVideos.map(v=>(
                                 <div key={v.id} draggable onDragStart={e=>e.dataTransfer.setData("videoId",v.id)}
-                                  style={{background:CARD,border:`1px solid ${BORDER}`,borderRadius:8,padding:"10px 12px",cursor:"grab",transition:"all .15s"}}
+                                  onClick={()=>setVideoDetailModal({...v})}
+                                  style={{background:CARD,border:`1px solid ${v.ref_url?BLUE:BORDER}`,borderRadius:8,padding:"10px 12px",cursor:"pointer",transition:"all .15s"}}
                                   className="hover-card"
                                 >
-                                  <div style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:600,marginBottom:6,lineHeight:1.35}}>{v.title}</div>
-                                  <div style={{display:"flex",gap:4,marginBottom:6}}>
+                                  {v.ref_thumb&&<img src={v.ref_thumb} alt="" style={{width:"100%",height:60,objectFit:"cover",borderRadius:4,marginBottom:6}}/>}
+                                  <div style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:600,marginBottom:4,lineHeight:1.35}}>{v.meu_titulo||v.title}</div>
+                                  <div style={{display:"flex",gap:4,marginBottom:4,flexWrap:"wrap"}}>
                                     <span style={{background:`${ACCENT}15`,color:ACCENT,border:`1px solid ${ACCENT}33`,borderRadius:4,padding:"1px 6px",fontSize:10}}>{v.niche}</span>
+                                    {v.ref_url&&<span style={{background:`${BLUE}15`,color:BLUE,border:`1px solid ${BLUE}33`,borderRadius:4,padding:"1px 6px",fontSize:10}}>📎 ref</span>}
                                   </div>
-                                  {v.publish_date&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:MUTED,marginBottom:6}}>📅 {fmtDate(v.publish_date)}</div>}
-                                  <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                                    <button onClick={()=>openScript(v)} style={{...btnGhost,padding:"2px 7px",fontSize:9,color:ACCENT,borderColor:`${ACCENT}33`}}>📄 Roteiro</button>
-                                    <button onClick={()=>{setVideoEdit({...v});setVideoModal(true);}} style={{...btnGhost,padding:"2px 7px",fontSize:9}}>✏️</button>
-                                    <button onClick={()=>setApprovalModal(v)} style={{...btnGhost,padding:"2px 7px",fontSize:9,color:BLUE,borderColor:`${BLUE}33`}}>🔗</button>
-                                    <button onClick={()=>deleteVideo(v.id)} style={{...btnGhost,padding:"2px 7px",fontSize:9,color:RED,borderColor:`${RED}33`}}>✕</button>
-                                  </div>
+                                  {v.publish_date&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:MUTED}}>📅 {fmtDate(v.publish_date)}</div>}
                                 </div>
                               ))}
                               {colVideos.length===0&&<div style={{color:MUTED,fontSize:11,textAlign:"center",padding:16}}>Arraste aqui</div>}
@@ -908,7 +1049,10 @@ export default function DarkApp() {
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:2}}>CLIENTES</div>
-              <button onClick={()=>{setClientEdit({name:"",color:ACCENT,type:"YouTube",frequency:"",rate_per_hour:0,notes:""});setClientModal(true);}} style={btnGold}>+ NOVO CLIENTE</button>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>{setLeadEdit({name:"",contact:"",service:"",proposed_value:0,status:"novo",last_contact:today(),follow_up_date:"",notes:""});setLeadModal(true);}} style={{...btnGhost,color:ACCENT,borderColor:`${ACCENT}44`}}>+ Lead</button>
+                <button onClick={()=>{setClientEdit({name:"",color:ACCENT,type:"YouTube",frequency:"",rate_per_hour:0,notes:""});setClientModal(true);}} style={btnGold}>+ NOVO CLIENTE</button>
+              </div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"280px 1fr",gap:20}}>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -993,6 +1137,45 @@ export default function DarkApp() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* LEADS */}
+          <div style={{marginTop:24}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:20,letterSpacing:2}}>LEADS <span style={{fontSize:14,color:MUTED}}>({leads.filter(l=>!l.converted).length} ativos)</span></div>
+              <button onClick={()=>{setLeadEdit({name:"",contact:"",service:"",proposed_value:0,status:"novo",last_contact:today(),follow_up_date:"",notes:""});setLeadModal(true);}} style={{...btnGhost,fontSize:11}}>+ Novo Lead</button>
+            </div>
+            {leads.filter(l=>!l.converted).length===0&&<div style={{...card,textAlign:"center",padding:24,color:MUTED,fontFamily:"'DM Sans'",fontSize:13}}>Nenhum lead ativo. Adicione prospects que pediram orçamento.</div>}
+            {leads.filter(l=>!l.converted).map(lead=>{
+              const LSTATUS = {"novo":{l:"Novo",c:"#60A5FA"},"proposta_enviada":{l:"Proposta Enviada",c:ACCENT},"em_negociacao":{l:"Em Negociação",c:"#FB923C"},"fechado":{l:"Fechado",c:GREEN},"perdido":{l:"Perdido",c:RED}};
+              const ls = LSTATUS[lead.status]||LSTATUS["novo"];
+              const followUpDiff = lead.follow_up_date?deadlineDiff(lead.follow_up_date):null;
+              return(
+                <div key={lead.id} style={{...card,marginBottom:8}}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+                    <div style={{flex:1}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
+                        <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:1}}>{lead.name}</div>
+                        <span style={{background:`${ls.c}22`,color:ls.c,border:`1px solid ${ls.c}44`,borderRadius:4,padding:"1px 8px",fontSize:10,fontFamily:"'DM Sans'",fontWeight:600}}>{ls.l}</span>
+                        {lead.proposed_value>0&&<span style={{fontFamily:"'IBM Plex Mono'",fontSize:11,color:ACCENT}}>R$ {lead.proposed_value.toLocaleString("pt-BR",{minimumFractionDigits:0})}</span>}
+                      </div>
+                      <div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED,display:"flex",gap:12,flexWrap:"wrap"}}>
+                        {lead.contact&&<span>📱 {lead.contact}</span>}
+                        {lead.service&&<span>🎯 {lead.service}</span>}
+                        {lead.last_contact&&<span>📅 Último contato: {fmtDate(lead.last_contact)}</span>}
+                        {followUpDiff!==null&&<span style={{color:followUpDiff<=0?RED:followUpDiff<=2?ACCENT:MUTED}}>🔔 Follow-up: {followUpDiff<=0?"HOJE/VENCIDO":`em ${followUpDiff}d`}</span>}
+                      </div>
+                      {lead.notes&&<div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED,marginTop:4}}>{lead.notes}</div>}
+                    </div>
+                    <div style={{display:"flex",gap:6,flexShrink:0}}>
+                      <button onClick={()=>{setLeadEdit({...lead});setLeadModal(true);}} style={{...btnGhost,padding:"4px 8px",fontSize:11}}>✏️</button>
+                      <button onClick={()=>convertLead(lead)} style={{...btnGhost,padding:"4px 10px",fontSize:11,color:GREEN,borderColor:`${GREEN}44`}}>→ Cliente</button>
+                      <button onClick={()=>deleteLead(lead.id)} style={{background:"none",border:"none",color:RED,cursor:"pointer",fontSize:12}}>✕</button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -1122,6 +1305,7 @@ export default function DarkApp() {
         })()}
 
         {/* ═══ TRENDING ═══ */}
+        {/* ═══ TRENDING ═══ */}
         {activeTab===7&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
@@ -1129,31 +1313,36 @@ export default function DarkApp() {
                 <div style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:2}}>🔥 TRENDING YOUTUBE</div>
                 {lastUpdated&&<div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,marginTop:4}}>Atualizado: {lastUpdated.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</div>}
               </div>
-              <button onClick={fetchTrending} disabled={trendingLoading} style={{...btnGold,opacity:trendingLoading?.7:1}}>
-                {trendingLoading?"BUSCANDO...":"🔄 ATUALIZAR AGORA"}
-              </button>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>{setRefChannelEdit({name:"",channel_id:"",url:"",niche:NICHES[0],subscribers:"",notes:""});setRefChannelModal(true);}} style={{...btnGhost,fontSize:11}}>+ Canal de referência</button>
+                <button onClick={fetchTrending} disabled={trendingLoading} style={{...btnGold,opacity:trendingLoading?.7:1}}>
+                  {trendingLoading?"BUSCANDO...":"🔄 ATUALIZAR AGORA"}
+                </button>
+              </div>
             </div>
 
             {/* Tabs */}
             <div style={{display:"flex",gap:2,borderBottom:`1px solid ${BORDER}`,marginBottom:20,overflowX:"auto"}}>
-              {["brasil","mundial",...NICHES].map(t=>(
-                <button key={t} onClick={()=>setTrendingTab(t)} style={{fontFamily:"'DM Sans'",fontSize:12,color:trendingTab===t?ACCENT:MUTED,background:"transparent",border:"none",borderBottom:trendingTab===t?`2px solid ${ACCENT}`:"2px solid transparent",padding:"10px 14px",cursor:"pointer",whiteSpace:"nowrap",fontWeight:trendingTab===t?600:400,transition:"all .15s"}}>
-                  {t==="brasil"?"🇧🇷 Brasil":t==="mundial"?"🌍 Mundial":t}
+              {["brasil","mundial","nichos","referencias"].map(t=>(
+                <button key={t} onClick={()=>setTrendingTab(t)} style={{fontFamily:"'DM Sans'",fontSize:12,color:trendingTab===t?ACCENT:MUTED,background:"transparent",border:"none",borderBottom:trendingTab===t?`2px solid ${ACCENT}`:"2px solid transparent",padding:"10px 16px",cursor:"pointer",whiteSpace:"nowrap",fontWeight:trendingTab===t?600:400,transition:"all .15s"}}>
+                  {t==="brasil"?"🇧🇷 Brasil":t==="mundial"?"🌍 Mundial":t==="nichos"?"🎯 Por Nicho":"📌 Referências"}
                 </button>
               ))}
             </div>
 
-            {trendingData.br.length===0?(
-              <div style={{...card,textAlign:"center",padding:48}}>
-                <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:MUTED,marginBottom:12}}>CONFIGURE A YOUTUBE API KEY</div>
-                <div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,marginBottom:20}}>Adicione a variável NEXT_PUBLIC_YOUTUBE_API_KEY no Vercel e clique em Atualizar.</div>
-                <button onClick={fetchTrending} style={btnGold}>🔄 TENTAR BUSCAR</button>
-              </div>
-            ):(()=>{
-              const videos_list=trendingTab==="brasil"?trendingData.br:trendingTab==="mundial"?trendingData.global:trendingData.niches[trendingTab]||[];
-              const virals=videos_list.filter(v=>v.growth>50);
+            {/* BRASIL / MUNDIAL */}
+            {(trendingTab==="brasil"||trendingTab==="mundial")&&(()=>{
+              const list=trendingTab==="brasil"?trendingData.br:trendingData.global;
+              const virals=list.filter(v=>v.growth>50);
               return(
                 <div>
+                  {trendingData.br.length===0&&(
+                    <div style={{...card,textAlign:"center",padding:48}}>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:MUTED,marginBottom:12}}>CONFIGURE A YOUTUBE API KEY</div>
+                      <div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,marginBottom:20}}>Adicione NEXT_PUBLIC_YOUTUBE_API_KEY no Vercel e clique em Atualizar.</div>
+                      <button onClick={fetchTrending} style={btnGold}>🔄 TENTAR BUSCAR</button>
+                    </div>
+                  )}
                   {virals.length>0&&(
                     <div style={{...card,borderColor:`${RED}44`,marginBottom:20}}>
                       <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:2,color:RED,marginBottom:12}}>🚀 VIRALIZANDO AGORA</div>
@@ -1165,32 +1354,153 @@ export default function DarkApp() {
                             <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{v.channel} · {v.views?.toLocaleString("pt-BR")} views</div>
                           </div>
                           <span style={{background:`${RED}22`,color:RED,border:`1px solid ${RED}44`,borderRadius:4,padding:"2px 8px",fontFamily:"'IBM Plex Mono'",fontSize:11,fontWeight:600,flexShrink:0}}>🚀 +{v.growth}%</span>
-                          <button onClick={()=>saveIdea(v.title,trendingTab)} style={{...btnGhost,padding:"3px 8px",fontSize:10,color:GREEN,borderColor:`${GREEN}33`,flexShrink:0}}>+ideia</button>
+                          <div style={{display:"flex",gap:6,flexShrink:0}}>
+                            <button onClick={()=>saveIdea(v.title,"Trending")} style={{...btnGhost,padding:"2px 8px",fontSize:10,color:GREEN,borderColor:`${GREEN}33`}}>+ ideia</button>
+                            <button onClick={()=>setUseAsBaseModal(v)} style={{...btnGhost,padding:"2px 8px",fontSize:10,color:ACCENT,borderColor:`${ACCENT}33`}}>usar como base</button>
+                          </div>
                         </div>
                       ))}
                     </div>
                   )}
-
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(360px,1fr))",gap:12}}>
-                    {videos_list.map((v,i)=>(
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:12}}>
+                    {list.map((v,i)=>(
                       <div key={v.id} style={{...card,display:"flex",gap:12,marginBottom:0,alignItems:"flex-start"}} className="hover-card">
-                        <span style={{fontFamily:"'Bebas Neue'",fontSize:20,color:MUTED,width:30,flexShrink:0,lineHeight:1,marginTop:2}}>{i+1}</span>
-                        {v.thumb&&<img src={v.thumb} alt="" style={{width:80,height:60,borderRadius:6,objectFit:"cover",flexShrink:0}}/>}
+                        <span style={{fontFamily:"'Bebas Neue'",fontSize:20,color:MUTED,width:28,flexShrink:0,lineHeight:1,marginTop:4}}>{i+1}</span>
+                        {v.thumb&&<img src={v.thumb} alt="" style={{width:80,height:58,borderRadius:6,objectFit:"cover",flexShrink:0}}/>}
                         <div style={{flex:1,minWidth:0}}>
                           <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:13,fontWeight:600,color:TEXT,textDecoration:"none",display:"block",lineHeight:1.4,marginBottom:4}}>{v.title}</a>
                           <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,marginBottom:6}}>{v.channel} · {v.views?.toLocaleString("pt-BR")} views</div>
-                          {v.growth>0&&<span style={{background:`${v.growth>50?RED:v.growth>20?ACCENT:GREEN}22`,color:v.growth>50?RED:v.growth>20?ACCENT:GREEN,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:600}}>🚀 +{v.growth}%</span>}
-                          <div style={{marginTop:6}}>
-                            <button onClick={()=>saveIdea(v.title,trendingTab==="brasil"?"Trending BR":trendingTab==="mundial"?"Trending Global":trendingTab)} style={{...btnGhost,padding:"2px 8px",fontSize:10,color:ACCENT,borderColor:`${ACCENT}33`}}>+ Salvar ideia</button>
+                          {v.growth>0&&<span style={{background:`${v.growth>50?RED:v.growth>20?ACCENT:GREEN}22`,color:v.growth>50?RED:v.growth>20?ACCENT:GREEN,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:600,marginBottom:6,display:"inline-block"}}>🚀 +{v.growth}%</span>}
+                          <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>
+                            <button onClick={()=>saveIdea(v.title,"Trending")} style={{...btnGhost,padding:"2px 8px",fontSize:10,color:GREEN,borderColor:`${GREEN}33`}}>+ ideia</button>
+                            <button onClick={()=>setUseAsBaseModal(v)} style={{...btnGhost,padding:"2px 8px",fontSize:10,color:ACCENT,borderColor:`${ACCENT}33`}}>usar como base</button>
                           </div>
                         </div>
                       </div>
                     ))}
-                    {videos_list.length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:40,color:MUTED,fontFamily:"'DM Sans'",fontSize:13}}>Clique em "Atualizar Agora" para buscar os trending.</div>}
+                    {list.length===0&&trendingData.br.length>0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:40,color:MUTED,fontFamily:"'DM Sans'",fontSize:13}}>Nenhum vídeo encontrado.</div>}
                   </div>
                 </div>
               );
             })()}
+
+            {/* POR NICHO */}
+            {trendingTab==="nichos"&&(
+              <div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:16,marginBottom:24}}>
+                  {NICHES.map(niche=>{
+                    const channels=refChannels.filter(c=>c.niche===niche);
+                    return(
+                      <div key={niche} style={{...card,marginBottom:0}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                          <div>
+                            <div style={{fontFamily:"'Bebas Neue'",fontSize:15,letterSpacing:1}}>{niche}</div>
+                            <div style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:ACCENT}}>CPM {NICHE_CPM[niche]}</div>
+                          </div>
+                          <button onClick={()=>{setRefChannelEdit({name:"",channel_id:"",url:"",niche,subscribers:"",notes:""});setRefChannelModal(true);}} style={{...btnGhost,padding:"2px 8px",fontSize:10}}>+ canal</button>
+                        </div>
+                        {channels.length===0?(
+                          <div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED,padding:"8px 0"}}>Nenhum canal. Adicione canais de referência.</div>
+                        ):channels.map(ch=>(
+                          <div key={ch.id} style={{marginBottom:10,background:BG,borderRadius:8,overflow:"hidden"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderBottom:`1px solid ${BORDER}`}}>
+                              <div style={{flex:1}}>
+                                <a href={ch.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:600,color:TEXT,textDecoration:"none"}}>{ch.name}</a>
+                                {ch.subscribers&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:MUTED}}>{ch.subscribers} inscritos</div>}
+                              </div>
+                              <div style={{display:"flex",gap:4}}>
+                                <button onClick={()=>fetchChannelVideos(ch)} disabled={!!channelLoading} style={{...btnGhost,padding:"2px 8px",fontSize:10,color:ACCENT,borderColor:`${ACCENT}33`,opacity:channelLoading===ch.id?.5:1}}>
+                                  {channelLoading===ch.id?"...":"▶ ver top 10"}
+                                </button>
+                                <button onClick={()=>deleteRefChannel(ch.id)} style={{background:"none",border:"none",color:RED,cursor:"pointer",fontSize:11}}>✕</button>
+                              </div>
+                            </div>
+                            {channelVideos[ch.id]&&(
+                              <div style={{padding:"6px 0"}}>
+                                {channelVideos[ch.id].map((v,i)=>(
+                                  <div key={v.id} style={{display:"flex",gap:8,padding:"6px 10px",borderBottom:`1px solid ${BORDER}`,alignItems:"center"}}>
+                                    <span style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:MUTED,width:18,flexShrink:0}}>{i+1}</span>
+                                    {v.thumb&&<img src={v.thumb} alt="" style={{width:50,height:36,borderRadius:3,objectFit:"cover",flexShrink:0}}/>}
+                                    <div style={{flex:1,minWidth:0}}>
+                                      <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:11,fontWeight:500,color:TEXT,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.title}</a>
+                                      <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.views?.toLocaleString("pt-BR")} views</div>
+                                    </div>
+                                    <div style={{display:"flex",gap:4,flexShrink:0}}>
+                                      <button onClick={()=>saveIdea(v.title,niche)} style={{...btnGhost,padding:"1px 6px",fontSize:9,color:GREEN,borderColor:`${GREEN}33`}}>+</button>
+                                      <button onClick={()=>setUseAsBaseModal({...v,niche})} style={{...btnGhost,padding:"1px 6px",fontSize:9,color:ACCENT,borderColor:`${ACCENT}33`}}>base</button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* REFERÊNCIAS */}
+            {trendingTab==="referencias"&&(
+              <div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:20,letterSpacing:2}}>CANAIS DE REFERÊNCIA</div>
+                  <button onClick={()=>{setRefChannelEdit({name:"",channel_id:"",url:"",niche:NICHES[0],subscribers:"",notes:""});setRefChannelModal(true);}} style={btnGold}>+ ADICIONAR CANAL</button>
+                </div>
+                {NICHES.map(niche=>{
+                  const channels=refChannels.filter(c=>c.niche===niche);
+                  if(channels.length===0)return null;
+                  return(
+                    <div key={niche} style={{marginBottom:20}}>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:1,color:ACCENT,marginBottom:10,paddingBottom:6,borderBottom:`1px solid ${BORDER}`}}>{niche}</div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
+                        {channels.map(ch=>(
+                          <div key={ch.id} style={{...card,marginBottom:0}} className="hover-card">
+                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                              <div>
+                                <a href={ch.url} target="_blank" rel="noreferrer" style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:1,color:TEXT,textDecoration:"none",display:"block"}}>{ch.name}</a>
+                                {ch.subscribers&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:MUTED}}>{ch.subscribers} inscritos</div>}
+                              </div>
+                              <div style={{display:"flex",gap:4}}>
+                                <button onClick={()=>{setRefChannelEdit({...ch});setRefChannelModal(true);}} style={{...btnGhost,padding:"2px 6px",fontSize:10}}>✏️</button>
+                                <button onClick={()=>deleteRefChannel(ch.id)} style={{background:"none",border:"none",color:RED,cursor:"pointer",fontSize:11}}>✕</button>
+                              </div>
+                            </div>
+                            {ch.notes&&<div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED,lineHeight:1.5}}>{ch.notes}</div>}
+                            <button onClick={()=>fetchChannelVideos(ch)} disabled={!!channelLoading} style={{...btnGhost,width:"100%",marginTop:8,fontSize:11,color:ACCENT,borderColor:`${ACCENT}33`,opacity:channelLoading===ch.id?.5:1}}>
+                              {channelLoading===ch.id?"Carregando...":channelVideos[ch.id]?`✓ ${channelVideos[ch.id].length} vídeos carregados`:"▶ Carregar top 10 vídeos"}
+                            </button>
+                            {channelVideos[ch.id]&&(
+                              <div style={{marginTop:8}}>
+                                {channelVideos[ch.id].slice(0,5).map((v,i)=>(
+                                  <div key={v.id} style={{display:"flex",gap:8,padding:"5px 0",borderBottom:`1px solid ${BORDER}`,alignItems:"center"}}>
+                                    <span style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:MUTED,width:16}}>{i+1}</span>
+                                    <div style={{flex:1,minWidth:0}}>
+                                      <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:11,color:TEXT,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.title}</a>
+                                      <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.views?.toLocaleString("pt-BR")} views</div>
+                                    </div>
+                                    <button onClick={()=>setUseAsBaseModal({...v,niche:ch.niche})} style={{...btnGhost,padding:"1px 6px",fontSize:9,color:ACCENT,borderColor:`${ACCENT}33`,flexShrink:0}}>usar base</button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+                {refChannels.length===0&&(
+                  <div style={{...card,textAlign:"center",padding:40}}>
+                    <div style={{fontFamily:"'Bebas Neue'",fontSize:20,color:MUTED,marginBottom:8}}>NENHUM CANAL CADASTRADO</div>
+                    <div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,marginBottom:16}}>Adicione canais de referência por nicho para acompanhar os melhores conteúdos.</div>
+                    <button onClick={()=>{setRefChannelEdit({name:"",channel_id:"",url:"",niche:NICHES[0],subscribers:"",notes:""});setRefChannelModal(true);}} style={btnGold}>+ ADICIONAR CANAL</button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -1481,7 +1791,222 @@ export default function DarkApp() {
         </div>
       )}
 
-      {/* Confetti */}
+      {/* ── VIDEO DETAIL MODAL (Canais Dark) ── */}
+      {videoDetailModal&&(
+        <div onClick={e=>e.target===e.currentTarget&&setVideoDetailModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:150,display:"flex",alignItems:"flex-start",justifyContent:"flex-end"}}>
+          <div style={{background:BG2,borderLeft:`1px solid ${BORDER2}`,width:"100%",maxWidth:680,height:"100vh",overflowY:"auto",padding:32}}>
+            {/* Header */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
+              <div style={{flex:1,marginRight:16}}>
+                <input value={videoDetailModal.meu_titulo||videoDetailModal.title||""} onChange={e=>setVideoDetailModal({...videoDetailModal,meu_titulo:e.target.value})} style={{...inp,fontFamily:"'Bebas Neue'",fontSize:22,letterSpacing:1,background:"transparent",border:"none",borderBottom:`1px solid ${BORDER2}`,borderRadius:0,padding:"4px 0",width:"100%"}} placeholder="Título do vídeo..."/>
+              </div>
+              <div style={{display:"flex",gap:8,flexShrink:0}}>
+                <button onClick={()=>saveVideoDetail(videoDetailModal)} style={btnGold}>💾 SALVAR</button>
+                <button onClick={()=>setVideoDetailModal(null)} style={btnGhost}>✕</button>
+              </div>
+            </div>
+
+            {/* Status pipeline */}
+            <div style={{marginBottom:20}}>
+              <div style={lbl}>Etapa no pipeline</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {PIPELINE.map(s=>{
+                  const color=PIPELINE_COLORS[s]||ACCENT;
+                  const active=videoDetailModal.status===s;
+                  return(
+                    <button key={s} onClick={()=>setVideoDetailModal({...videoDetailModal,status:s})} style={{...btnGhost,fontSize:11,padding:"5px 12px",color:active?color:MUTED,borderColor:active?`${color}66`:BORDER,background:active?`${color}15`:undefined,fontWeight:active?600:400}}>
+                      {active?"● ":""}{s}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Metadados */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:20}}>
+              <div>
+                <div style={lbl}>Nicho</div>
+                <select value={videoDetailModal.niche||""} onChange={e=>setVideoDetailModal({...videoDetailModal,niche:e.target.value})} style={inp}>
+                  {NICHES.map(n=><option key={n}>{n}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={lbl}>Data publicação</div>
+                <input type="date" value={videoDetailModal.publish_date||""} onChange={e=>setVideoDetailModal({...videoDetailModal,publish_date:e.target.value})} style={inp}/>
+              </div>
+              <div>
+                <div style={lbl}>Plataformas</div>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:4}}>
+                  {["YouTube","Instagram","TikTok","Shorts"].map(p=>{
+                    const plats=videoDetailModal.platforms||[];
+                    const active=plats.includes(p);
+                    return<button key={p} onClick={()=>setVideoDetailModal({...videoDetailModal,platforms:active?plats.filter(x=>x!==p):[...plats,p]})} style={{...btnGhost,padding:"2px 8px",fontSize:10,color:active?ACCENT:MUTED,borderColor:active?`${ACCENT}44`:BORDER,background:active?`${ACCENT}10`:undefined}}>{p}</button>;
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Referência */}
+            {videoDetailModal.ref_url&&(
+              <div style={{...card,marginBottom:20,borderColor:`${BLUE}33`}}>
+                <div style={{fontFamily:"'DM Sans'",fontSize:10,color:BLUE,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>📎 VÍDEO DE REFERÊNCIA</div>
+                <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+                  {videoDetailModal.ref_thumb&&<img src={videoDetailModal.ref_thumb} alt="" style={{width:100,height:70,borderRadius:6,objectFit:"cover",flexShrink:0}}/>}
+                  <div style={{flex:1}}>
+                    <a href={videoDetailModal.ref_url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:13,fontWeight:600,color:TEXT,textDecoration:"none",display:"block",marginBottom:4}}>{videoDetailModal.ref_titulo}</a>
+                    <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,marginBottom:4}}>{videoDetailModal.ref_canal}</div>
+                    {videoDetailModal.ref_views>0&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:11,color:ACCENT}}>{videoDetailModal.ref_views?.toLocaleString("pt-BR")} views</div>}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Meu título */}
+            <div style={{marginBottom:16}}>
+              <div style={lbl}>Meu título</div>
+              <input value={videoDetailModal.meu_titulo||""} onChange={e=>setVideoDetailModal({...videoDetailModal,meu_titulo:e.target.value})} placeholder="Título otimizado para YouTube..." style={inp}/>
+            </div>
+
+            {/* Minha thumbnail */}
+            <div style={{marginBottom:16}}>
+              <div style={lbl}>Ideia de thumbnail</div>
+              <textarea value={videoDetailModal.minha_thumbnail||""} onChange={e=>setVideoDetailModal({...videoDetailModal,minha_thumbnail:e.target.value})} placeholder="Descreva a ideia da thumbnail: cores, texto, imagem, estilo..." style={{...inp,minHeight:60}}/>
+            </div>
+
+            {/* Transcrição */}
+            <div style={{marginBottom:16}}>
+              <div style={lbl}>Transcrição do vídeo de referência</div>
+              <textarea value={videoDetailModal.transcricao||""} onChange={e=>setVideoDetailModal({...videoDetailModal,transcricao:e.target.value})} placeholder="Cole aqui a transcrição do vídeo de referência..." style={{...inp,minHeight:120}}/>
+            </div>
+
+            {/* Meu roteiro */}
+            <div style={{marginBottom:16}}>
+              <div style={lbl}>Meu roteiro</div>
+              <textarea value={videoDetailModal.meu_roteiro||""} onChange={e=>setVideoDetailModal({...videoDetailModal,meu_roteiro:e.target.value})} placeholder="Escreva seu roteiro adaptado aqui..." style={{...inp,minHeight:200}}/>
+            </div>
+
+            {/* Descrição YouTube */}
+            <div style={{marginBottom:16}}>
+              <div style={lbl}>Descrição YouTube</div>
+              <textarea value={videoDetailModal.descricao_yt||""} onChange={e=>setVideoDetailModal({...videoDetailModal,descricao_yt:e.target.value})} placeholder="Descrição completa para o YouTube com timestamps, links, hashtags..." style={{...inp,minHeight:100}}/>
+            </div>
+
+            {/* Hook */}
+            <div style={{marginBottom:16}}>
+              <div style={lbl}>Hook (frase de abertura)</div>
+              <input value={videoDetailModal.hook||""} onChange={e=>setVideoDetailModal({...videoDetailModal,hook:e.target.value})} placeholder="Em 1999, Joan Murray saltou de um avião..." style={inp}/>
+            </div>
+
+            {/* Drive locução */}
+            <div style={{marginBottom:16}}>
+              <div style={lbl}>📁 Link Google Drive — Arquivo de locução</div>
+              <input value={videoDetailModal["drive_locuçao"]||""} onChange={e=>setVideoDetailModal({...videoDetailModal,"drive_locuçao":e.target.value})} placeholder="https://drive.google.com/... (para a equipe de edição)" style={inp}/>
+            </div>
+
+            {/* Notas */}
+            <div style={{marginBottom:24}}>
+              <div style={lbl}>Notas</div>
+              <textarea value={videoDetailModal.notes||""} onChange={e=>setVideoDetailModal({...videoDetailModal,notes:e.target.value})} placeholder="Observações, ideias soltas..." style={{...inp,minHeight:60}}/>
+            </div>
+
+            <div style={{display:"flex",gap:10,paddingTop:16,borderTop:`1px solid ${BORDER}`}}>
+              <button onClick={()=>saveVideoDetail(videoDetailModal)} style={{...btnGold,flex:1}}>💾 SALVAR</button>
+              <button onClick={()=>openScript(videoDetailModal)} style={{...btnGhost,color:ACCENT,borderColor:`${ACCENT}44`}}>📄 Roteiro Joan Murray</button>
+              <button onClick={()=>{deleteVideo(videoDetailModal.id);setVideoDetailModal(null);}} style={{...btnGhost,color:RED,borderColor:`${RED}33`}}>🗑 Excluir</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── USE AS BASE MODAL ── */}
+      {useAsBaseModal&&(
+        <div onClick={e=>e.target===e.currentTarget&&setUseAsBaseModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:160,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:BG2,border:`1px solid ${BORDER2}`,borderRadius:12,width:"100%",maxWidth:500,padding:28}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:20,letterSpacing:2}}>USAR COMO BASE</div>
+              <button onClick={()=>setUseAsBaseModal(null)} style={btnGhost}>✕</button>
+            </div>
+            <div style={{display:"flex",gap:12,marginBottom:20,alignItems:"flex-start"}}>
+              {useAsBaseModal.thumb&&<img src={useAsBaseModal.thumb} alt="" style={{width:100,height:72,borderRadius:6,objectFit:"cover",flexShrink:0}}/>}
+              <div style={{flex:1}}>
+                <div style={{fontFamily:"'DM Sans'",fontSize:13,fontWeight:600,marginBottom:4,lineHeight:1.4}}>{useAsBaseModal.title}</div>
+                <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,marginBottom:4}}>{useAsBaseModal.channel}</div>
+                {useAsBaseModal.views>0&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:11,color:ACCENT}}>{useAsBaseModal.views?.toLocaleString("pt-BR")} views</div>}
+                <a href={useAsBaseModal.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:11,color:BLUE,display:"block",marginTop:4}}>▶ Assistir no YouTube</a>
+              </div>
+            </div>
+            <div style={{marginBottom:16}}>
+              <div style={lbl}>Nicho para o seu vídeo</div>
+              <select value={useAsBaseModal.niche||NICHES[0]} onChange={e=>setUseAsBaseModal({...useAsBaseModal,niche:e.target.value})} style={inp}>
+                {NICHES.map(n=><option key={n}>{n}</option>)}
+              </select>
+            </div>
+            <div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED,marginBottom:16,padding:"10px 12px",background:BG,borderRadius:6}}>
+              Isso vai criar um novo vídeo na coluna <span style={{color:ACCENT,fontWeight:600}}>Roteiro</span> do Canais Dark com esse vídeo como referência.
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setUseAsBaseModal(null)} style={btnGhost}>Cancelar</button>
+              <button onClick={()=>useVideoAsBase(useAsBaseModal,useAsBaseModal.niche)} style={{...btnGold,flex:1}}>🎬 CRIAR NO PIPELINE</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── REF CHANNEL MODAL ── */}
+      {refChannelModal&&refChannelEdit&&(
+        <div onClick={e=>e.target===e.currentTarget&&(setRefChannelModal(false),setRefChannelEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:160,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:BG2,border:`1px solid ${BORDER2}`,borderRadius:12,width:"100%",maxWidth:480,padding:28}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:20,letterSpacing:2}}>{refChannelEdit.id?"EDITAR CANAL":"NOVO CANAL DE REFERÊNCIA"}</div>
+              <button onClick={()=>{setRefChannelModal(false);setRefChannelEdit(null);}} style={btnGhost}>✕</button>
+            </div>
+            <div style={{marginBottom:14}}><div style={lbl}>Nome do canal</div><input value={refChannelEdit.name||""} onChange={e=>setRefChannelEdit({...refChannelEdit,name:e.target.value})} placeholder="Ex: Fatos Desconhecidos" style={inp}/></div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div style={{marginBottom:14}}><div style={lbl}>Nicho</div><select value={refChannelEdit.niche||NICHES[0]} onChange={e=>setRefChannelEdit({...refChannelEdit,niche:e.target.value})} style={inp}>{NICHES.map(n=><option key={n}>{n}</option>)}</select></div>
+              <div style={{marginBottom:14}}><div style={lbl}>Inscritos</div><input value={refChannelEdit.subscribers||""} onChange={e=>setRefChannelEdit({...refChannelEdit,subscribers:e.target.value})} placeholder="Ex: 14M" style={inp}/></div>
+            </div>
+            <div style={{marginBottom:14}}><div style={lbl}>URL do canal</div><input value={refChannelEdit.url||""} onChange={e=>setRefChannelEdit({...refChannelEdit,url:e.target.value})} placeholder="https://youtube.com/@canal" style={inp}/></div>
+            <div style={{marginBottom:14}}><div style={lbl}>Channel ID (para buscar vídeos via API)</div><input value={refChannelEdit.channel_id||""} onChange={e=>setRefChannelEdit({...refChannelEdit,channel_id:e.target.value})} placeholder="UCxxxxxxxxxx (encontre em about do canal)" style={inp}/></div>
+            <div style={{marginBottom:20}}><div style={lbl}>Notas</div><textarea value={refChannelEdit.notes||""} onChange={e=>setRefChannelEdit({...refChannelEdit,notes:e.target.value})} placeholder="Por que este canal é referência, o que funciona nele..." style={{...inp,minHeight:60}}/></div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <button onClick={()=>{setRefChannelModal(false);setRefChannelEdit(null);}} style={btnGhost}>Cancelar</button>
+              <button onClick={saveRefChannel} style={btnGold}>SALVAR</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── LEADS MODAL ── */}
+      {leadModal&&leadEdit&&(
+        <div onClick={e=>e.target===e.currentTarget&&(setLeadModal(false),setLeadEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:160,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:BG2,border:`1px solid ${BORDER2}`,borderRadius:12,width:"100%",maxWidth:500,padding:28,maxHeight:"90vh",overflowY:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:20,letterSpacing:2}}>{leadEdit.id?"EDITAR LEAD":"NOVO LEAD"}</div>
+              <button onClick={()=>{setLeadModal(false);setLeadEdit(null);}} style={btnGhost}>✕</button>
+            </div>
+            <div style={{marginBottom:14}}><div style={lbl}>Nome</div><input value={leadEdit.name||""} onChange={e=>setLeadEdit({...leadEdit,name:e.target.value})} style={inp}/></div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div style={{marginBottom:14}}><div style={lbl}>Contato (email/tel)</div><input value={leadEdit.contact||""} onChange={e=>setLeadEdit({...leadEdit,contact:e.target.value})} style={inp}/></div>
+              <div style={{marginBottom:14}}><div style={lbl}>Serviço solicitado</div><input value={leadEdit.service||""} onChange={e=>setLeadEdit({...leadEdit,service:e.target.value})} placeholder="Ex: Gestão de canal YouTube" style={inp}/></div>
+              <div style={{marginBottom:14}}><div style={lbl}>Valor proposto (R$)</div><input type="number" value={leadEdit.proposed_value||0} onChange={e=>setLeadEdit({...leadEdit,proposed_value:parseFloat(e.target.value)||0})} style={inp}/></div>
+              <div style={{marginBottom:14}}><div style={lbl}>Status</div>
+                <select value={leadEdit.status||"novo"} onChange={e=>setLeadEdit({...leadEdit,status:e.target.value})} style={inp}>
+                  {["novo","proposta_enviada","em_negociacao","fechado","perdido"].map(s=><option key={s} value={s}>{s.replace(/_/g," ").replace(/\w/g,c=>c.toUpperCase())}</option>)}
+                </select>
+              </div>
+              <div style={{marginBottom:14}}><div style={lbl}>Último contato</div><input type="date" value={leadEdit.last_contact||""} onChange={e=>setLeadEdit({...leadEdit,last_contact:e.target.value})} style={inp}/></div>
+              <div style={{marginBottom:14}}><div style={lbl}>Follow-up em</div><input type="date" value={leadEdit.follow_up_date||""} onChange={e=>setLeadEdit({...leadEdit,follow_up_date:e.target.value})} style={inp}/></div>
+            </div>
+            <div style={{marginBottom:20}}><div style={lbl}>Notas</div><textarea value={leadEdit.notes||""} onChange={e=>setLeadEdit({...leadEdit,notes:e.target.value})} style={{...inp,minHeight:70}}/></div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <button onClick={()=>{setLeadModal(false);setLeadEdit(null);}} style={btnGhost}>Cancelar</button>
+              <button onClick={saveLead} style={btnGold}>SALVAR</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+            {/* Confetti */}
       {confetti&&(
         <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:9999}}>
           {Array.from({length:24},(_,i)=>(
