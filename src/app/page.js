@@ -132,6 +132,11 @@ export default function DarkApp(){
   const [refChannelModal,setRefChannelModal]=useState(false);
   const [refChannelEdit,setRefChannelEdit]=useState(null);
   const [nicheModal,setNicheModal]=useState(false);
+  const [trendingRefChannels,setTrendingRefChannels]=useState([]);
+  const [trendingRefModal,setTrendingRefModal]=useState(false);
+  const [trendingRefEdit,setTrendingRefEdit]=useState(null);
+  const [trendingRefVideos,setTrendingRefVideos]=useState({});
+  const [trendingRefLoading,setTrendingRefLoading]=useState(null);
   const [nicheEdit,setNicheEdit]=useState(null);
   const [proposalModal,setProposalModal]=useState(null);
   const [leadFilter,setLeadFilter]=useState("todos");
@@ -209,17 +214,36 @@ export default function DarkApp(){
 
   const activeNiches=niches.filter(n=>n.active!==false);
 
+  const timerStartRef=useRef(null);
+  const timerBaseRef=useRef(0);
   useEffect(()=>{
-    if(timerRunning){timerRef.current=setInterval(()=>{setTimerSeconds(s=>{const next=s<=1?timerMode==="work"?5*60:25*60:s-1;try{localStorage.setItem("dark_timer_seconds",next);}catch{}if(s<=1){clearInterval(timerRef.current);setTimerRunning(false);handleTimerEnd();}return next;});},1000);}
-    else clearInterval(timerRef.current);
+    if(timerRunning){
+      timerStartRef.current=Date.now();
+      timerBaseRef.current=timerSeconds;
+      timerRef.current=setInterval(()=>{
+        const elapsed=Math.floor((Date.now()-timerStartRef.current)/1000);
+        const next=Math.max(0,timerBaseRef.current-elapsed);
+        setTimerSeconds(next);
+        try{localStorage.setItem("dark_timer_seconds",next);}catch{}
+        if(next<=0){clearInterval(timerRef.current);setTimerRunning(false);handleTimerEnd();}
+      },250);
+    } else clearInterval(timerRef.current);
     return()=>clearInterval(timerRef.current);
   },[timerRunning]);// eslint-disable-line
   useEffect(()=>{try{localStorage.setItem("dark_timer_mode",timerMode);}catch{}},[timerMode]);
   useEffect(()=>{try{if(focusTaskId)localStorage.setItem("dark_focus_task",focusTaskId);else localStorage.removeItem("dark_focus_task");}catch{}},[focusTaskId]);
 
   const handleTimerEnd=async()=>{
-    if(timerMode==="work"){triggerConfetti();const ns={...userStats,xp:(userStats.xp||0)+25,pomodoros_completed:(userStats.pomodoros_completed||0)+1};setUserStats(ns);if(userStats.id)await supabase.from("user_stats").update(ns).eq("id",userStats.id);setTimerMode("break");}
-    else{setTimerMode("work");setTimerSeconds(25*60);}
+    if(timerMode==="work"){
+      triggerConfetti();
+      const ns={...userStats,xp:(userStats.xp||0)+25,pomodoros_completed:(userStats.pomodoros_completed||0)+1};
+      setUserStats(ns);if(userStats.id)await supabase.from("user_stats").update(ns).eq("id",userStats.id);
+      setTimerMode("break");setTimerSeconds(5*60);
+      try{localStorage.setItem("dark_timer_mode","break");localStorage.setItem("dark_timer_seconds",5*60);}catch{}
+    } else {
+      setTimerMode("work");setTimerSeconds(25*60);
+      try{localStorage.setItem("dark_timer_mode","work");localStorage.setItem("dark_timer_seconds",25*60);}catch{}
+    }
   };
   const startTimer=async taskId=>{
     if(activeEntry)await stopTimeEntry();
@@ -264,7 +288,7 @@ export default function DarkApp(){
   };
   const saveVideoDetail=async vd=>{
     if(!vd?.id)return;
-    const{data}=await supabase.from("videos").update({title:vd.title,niche:vd.niche,status:vd.status,publish_date:vd.publish_date||null,platforms:vd.platforms||[],meu_titulo:vd.meu_titulo||"",minha_thumbnail:vd.minha_thumbnail||"",transcricao:vd.transcricao||"",meu_roteiro:vd.meu_roteiro||"",descricao_yt:vd.descricao_yt||"",hook:vd.hook||"",notes:vd.notes||"",ref_titulo:vd.ref_titulo||"",ref_thumb:vd.ref_thumb||"",ref_url:vd.ref_url||"",ref_canal:vd.ref_canal||"",ref_views:vd.ref_views||0,short_script:vd.short_script||"",short_status:vd.short_status||"pendente",short_platforms:vd.short_platforms||[]}).eq("id",vd.id).select().single();
+    const{data}=await supabase.from("videos").update({title:vd.title,niche:vd.niche,status:vd.status,publish_date:vd.publish_date||null,platforms:vd.platforms||[],meu_titulo:vd.meu_titulo||"",minha_thumbnail:vd.minha_thumbnail||"",transcricao:vd.transcricao||"",meu_roteiro:vd.meu_roteiro||"",descricao_yt:vd.descricao_yt||"",hook:vd.hook||"",notes:vd.notes||"",escopo:vd.escopo||"",ref_titulo:vd.ref_titulo||"",ref_thumb:vd.ref_thumb||"",ref_url:vd.ref_url||"",ref_canal:vd.ref_canal||"",ref_views:vd.ref_views||0,ref_link_manual:vd.ref_link_manual||"",short_script:vd.short_script||"",short_status:vd.short_status||"pendente",short_platforms:vd.short_platforms||[]}).eq("id",vd.id).select().single();
     if(data){setVideos(prev=>prev.map(v=>v.id===data.id?data:v));setVideoDetailModal(data);flash();}
   };
   const createVideo=async initial=>{
@@ -324,6 +348,13 @@ export default function DarkApp(){
   const saveIdea=async(title,opts={})=>{const{data}=await supabase.from("ideas").insert({title,source:opts.source||"quick",niche:opts.niche||"",description:opts.description||""}).select().single();if(data)setIdeas(prev=>[data,...prev]);flash();};
   const saveQuickIdea=async title=>saveIdea(title);
   const saveWaldeIdea=async(title,category)=>saveIdea(title,{source:"waldemar",niche:"Sr. Waldemar",description:category||""});
+  const createWaldeVideo=async initial=>{const wc=clients.find(c=>c.name==="Sr. Waldemar");const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:"Sr. Waldemar",status:"Roteiro",client_id:wc?.id,...(initial||{})}).select().single();if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);}};
+  const useWaldeIdeaAsVideo=async idea=>{const wc=clients.find(c=>c.name==="Sr. Waldemar");const{data}=await supabase.from("videos").insert({title:idea.title,niche:"Sr. Waldemar",status:"Roteiro",client_id:wc?.id,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
+  const createWaldeVideo=async initial=>{
+    const wc=clients.find(c=>c.name==="Sr. Waldemar");
+    const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:"Sr. Waldemar",status:"Roteiro",client_id:wc?.id,...(initial||{})}).select().single();
+    if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);}
+  };
   const deleteIdea=async id=>{await supabase.from("ideas").delete().eq("id",id);setIdeas(prev=>prev.filter(i=>i.id!==id));};
   const restoreIdea=async id=>{const{data}=await supabase.from("ideas").update({used:false}).eq("id",id).select().single();if(data)setIdeas(prev=>prev.map(i=>i.id===data.id?data:i));flash();};
   const useIdeaAsVideo=async idea=>{const dc=clients.find(c=>c.name==="Canais Dark");const{data}=await supabase.from("videos").insert({title:idea.title,niche:idea.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:dc?.id,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
@@ -341,6 +372,31 @@ export default function DarkApp(){
     setNicheModal(false);setNicheEdit(null);flash();
   };
   const deleteNiche=async id=>{await supabase.from("niches").delete().eq("id",id);setNiches(prev=>prev.filter(n=>n.id!==id));};
+
+  const loadTrendingRefChannels=async()=>{const{data}=await supabase.from("trending_ref_channels").select("*").order("name");if(data)setTrendingRefChannels(data);};
+  useEffect(()=>{if(user)loadTrendingRefChannels();},[user]);// eslint-disable-line
+  const saveTrendingRefChannel=async()=>{
+    if(!trendingRefEdit?.name?.trim())return;
+    if(trendingRefEdit.id){const r=await supabase.from("trending_ref_channels").update(trendingRefEdit).eq("id",trendingRefEdit.id).select().single();if(r.data)setTrendingRefChannels(prev=>prev.map(c=>c.id===r.data.id?r.data:c));}
+    else{const r=await supabase.from("trending_ref_channels").insert(trendingRefEdit).select().single();if(r.data)setTrendingRefChannels(prev=>[...prev,r.data]);}
+    setTrendingRefModal(false);setTrendingRefEdit(null);flash();
+  };
+  const deleteTrendingRefChannel=async id=>{await supabase.from("trending_ref_channels").delete().eq("id",id);setTrendingRefChannels(prev=>prev.filter(c=>c.id!==id));};
+  const fetchTrendingRefVideos=async ch=>{
+    const apiKey=process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
+    if(!apiKey||!ch.channel_id||trendingRefVideos[ch.id])return;
+    setTrendingRefLoading(ch.id);
+    try{
+      const r=await fetch("https://www.googleapis.com/youtube/v3/search?part=snippet&channelId="+ch.channel_id+"&order=viewCount&maxResults=10&type=video&key="+apiKey);
+      const d=await r.json();const ids=(d.items||[]).map(i=>i.id?.videoId).filter(Boolean).join(",");
+      if(!ids){setTrendingRefLoading(null);return;}
+      const s=await fetch("https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id="+ids+"&key="+apiKey);
+      const sd=await s.json();
+      setTrendingRefVideos(prev=>({...prev,[ch.id]:(sd.items||[]).map(v=>({id:v.id,title:v.snippet?.title,channel:v.snippet?.channelTitle,thumb:v.snippet?.thumbnails?.medium?.url,views:parseInt(v.statistics?.viewCount||0),url:"https://youtube.com/watch?v="+v.id})).sort((a,b)=>b.views-a.views)}));
+    }catch(e){flashError("Erro ao buscar vídeos");}
+    setTrendingRefLoading(null);
+  };
+  const reopenTask=async id=>{const{data}=await supabase.from("tasks").update({done:false,done_at:null}).eq("id",id).select().single();if(data)setTasks(prev=>prev.map(t=>t.id===data.id?data:t));flash();};
 
   const WALDEMAR_THEMES=[{name:"História do Clube",kw:"história do Flamengo clube"},{name:"Ídolos e Jogadores",kw:"ídolos Flamengo jogadores lendários"},{name:"Jogos Inesquecíveis",kw:"Flamengo jogos inesquecíveis finais"},{name:"Fundação e Origem",kw:"fundação Flamengo origem 1895"},{name:"Torcida",kw:"torcida Flamengo maior brasil"},{name:"Títulos e Conquistas",kw:"Flamengo títulos conquistas campeonatos"},{name:"Rivalidades",kw:"Flamengo Fluminense Vasco rivalidade"},{name:"Libertadores 2019",kw:"Flamengo Libertadores 2019 Lima"}];
   const fetchWaldeRefVideos=async theme=>{
@@ -553,7 +609,7 @@ export default function DarkApp(){
                   <input value={dashIdeaInput} onChange={e=>setDashIdeaInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&dashIdeaInput.trim()){saveQuickIdea(dashIdeaInput.trim());setDashIdeaInput("");}}} placeholder="Capturar ideia..." style={{...inp,flex:1,fontSize:12,padding:"6px 10px"}}/>
                   <button onClick={()=>{if(dashIdeaInput.trim()){saveQuickIdea(dashIdeaInput.trim());setDashIdeaInput("");}}} style={{...btnGold,padding:"6px 12px",fontSize:13}}>+</button>
                 </div>
-                {ideas.filter(i=>!i.used).slice(0,5).map(i=>(
+                {ideas.filter(i=>!i.used&&i.source!=="waldemar"&&i.niche!=="Sr. Waldemar").slice(0,5).map(i=>(
                   <div key={i.id} className="hr" style={{display:"flex",alignItems:"center",gap:8,padding:"7px 5px",borderBottom:"1px solid "+BOR,borderRadius:4}}>
                     <div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={()=>{setIdeaEdit({...i});setIdeaModal(true);}}>
                       <div style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.title}</div>
@@ -563,7 +619,7 @@ export default function DarkApp(){
                     <button onClick={()=>deleteIdea(i.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:12}}>✕</button>
                   </div>
                 ))}
-                {ideas.filter(i=>!i.used).length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:12}}>Capture sua próxima ideia acima.</div>}
+                {ideas.filter(i=>!i.used&&i.source!=="waldemar"&&i.niche!=="Sr. Waldemar").length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:12}}>Capture sua próxima ideia acima.</div>}
               </div>
             </div>
             {weekTasks.length>0&&(
@@ -1002,7 +1058,7 @@ export default function DarkApp(){
                 {["ideias","pipeline","referencias","stats"].map(s=>(
                   <button key={s} onClick={()=>setWSection(s)} style={{...btnGhost,color:wSection===s?ACCENT:MUTED,borderColor:wSection===s?ACCENT+"44":BOR,fontSize:12}}>{s==="ideias"?"💡 Ideias":s==="pipeline"?"🎬 Pipeline":s==="referencias"?"📺 Referências":"📊 Stats"}</button>
                 ))}
-                <button onClick={()=>createVideo({niche:"Sr. Waldemar",client_id:clients.find(c=>c.name==="Sr. Waldemar")?.id})} style={btnGold}>+ NOVO VÍDEO</button>
+                <button onClick={()=>createWaldeVideo()} style={btnGold}>+ NOVO VÍDEO</button>
               </div>
             </div>
             {wSection==="ideias"&&(
@@ -1026,7 +1082,7 @@ export default function DarkApp(){
                         {catIdeas.slice(0,3).map(i=>(
                           <div key={i.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid "+BOR}}>
                             <div style={{flex:1,fontFamily:"'DM Sans'",fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.title}</div>
-                            <button onClick={()=>useIdeaAsVideo(i)} style={{...btnGhost,padding:"1px 7px",fontSize:10,color:GREEN,borderColor:GREEN+"33",flexShrink:0}}>→</button>
+                            <button onClick={()=>useWaldeIdeaAsVideo(i)} style={{...btnGhost,padding:"1px 7px",fontSize:10,color:GREEN,borderColor:GREEN+"33",flexShrink:0}}>→</button>
                             <button onClick={()=>deleteIdea(i.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:11}}>✕</button>
                           </div>
                         ))}
@@ -1195,6 +1251,7 @@ export default function DarkApp(){
                         </div>
                       ))}
                       {pt.length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:16}}>Nenhuma tarefa pendente.</div>}
+                      {(()=>{const done=tasks.filter(t=>t.done&&t.client_id===selectedClient.id).sort((a,b)=>(b.done_at||"").localeCompare(a.done_at||""));if(!done.length)return null;return(<div style={{marginTop:14}}><div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",marginBottom:8,paddingTop:10,borderTop:"1px solid "+BOR}}>✓ CONCLUÍDAS ({done.length})</div>{done.map(t=>(<div key={t.id} className="hr" style={{display:"flex",alignItems:"center",gap:9,padding:"8px 7px",borderBottom:"1px solid "+BOR,borderRadius:4,opacity:.7}}><div style={{width:5,height:5,borderRadius:1,background:GREEN,flexShrink:0}}/><div style={{flex:1}}><div style={{fontFamily:"'DM Sans'",fontSize:13,textDecoration:"line-through",color:MUTED}}>{t.title}</div><div style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:HINT}}>{t.type||"Tarefa"} · {t.done_at?new Date(t.done_at).toLocaleDateString("pt-BR",{day:"2-digit",month:"short"}):""}</div></div><button onClick={()=>{setTaskEdit({...t});setTaskModal(true);}} style={{...btnGhost,padding:"2px 5px",fontSize:10}}>✏️</button><button onClick={()=>reopenTask(t.id)} style={{...btnGhost,padding:"2px 7px",fontSize:10,color:ACCENT,borderColor:ACCENT+"33"}}>↩ reabrir</button></div>))}</div>);})()}
                     </div>
                     <div style={{...card,marginTop:12}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
@@ -1428,11 +1485,58 @@ export default function DarkApp(){
               </div>
             </div>
             <div style={{display:"flex",gap:2,borderBottom:"1px solid "+BOR,marginBottom:20,overflowX:"auto"}}>
-              {["brasil","mundial",...activeNiches.map(n=>n.name)].map(t=>(
-                <button key={t} onClick={()=>setTrendingTab(t)} style={{fontFamily:"'DM Sans'",fontSize:12,color:trendingTab===t?ACCENT:MUTED,background:"transparent",border:"none",borderBottom:trendingTab===t?"2px solid "+ACCENT:"2px solid transparent",padding:"10px 14px",cursor:"pointer",whiteSpace:"nowrap",fontWeight:trendingTab===t?600:400}}>{t==="brasil"?"🇧🇷 Brasil":t==="mundial"?"🌍 Mundial":t}</button>
+              {["brasil","mundial",...activeNiches.map(n=>n.name),"canais_ref"].map(t=>(
+                <button key={t} onClick={()=>setTrendingTab(t)} style={{fontFamily:"'DM Sans'",fontSize:12,color:trendingTab===t?ACCENT:MUTED,background:"transparent",border:"none",borderBottom:trendingTab===t?"2px solid "+ACCENT:"2px solid transparent",padding:"10px 14px",cursor:"pointer",whiteSpace:"nowrap",fontWeight:trendingTab===t?600:400}}>{t==="brasil"?"🇧🇷 Brasil":t==="mundial"?"🌍 Mundial":t==="canais_ref"?"📺 Canais Referências":t}</button>
               ))}
             </div>
             {(()=>{
+              if(trendingTab==="canais_ref") return(
+                <div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                    <div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED}}>Adicione canais e busque os vídeos mais vistos de cada um.</div>
+                    <button onClick={()=>{setTrendingRefEdit({name:"",channel_id:"",url:"",notes:""});setTrendingRefModal(true);}} style={btnGold}>+ CANAL</button>
+                  </div>
+                  {trendingRefChannels.length===0&&(
+                    <div style={{...card,textAlign:"center",padding:36}}>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:MUTED,marginBottom:8}}>NENHUM CANAL CADASTRADO</div>
+                      <button onClick={()=>{setTrendingRefEdit({name:"",channel_id:"",url:"",notes:""});setTrendingRefModal(true);}} style={btnGold}>+ ADICIONAR CANAL</button>
+                    </div>
+                  )}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:14}}>
+                    {trendingRefChannels.map(ch=>(
+                      <div key={ch.id} style={{...card,marginBottom:0}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                          <div>
+                            <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:1}}>{ch.name}</div>
+                            {ch.url&&<a href={ch.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:11,color:BLUE,textDecoration:"none"}}>▶ Ver canal</a>}
+                            {ch.notes&&<div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,marginTop:3}}>{ch.notes}</div>}
+                          </div>
+                          <div style={{display:"flex",gap:5,flexShrink:0}}>
+                            <button onClick={()=>fetchTrendingRefVideos(ch)} disabled={trendingRefLoading===ch.id} style={{...btnGhost,fontSize:11,padding:"3px 10px",color:ACCENT,borderColor:ACCENT+"44",opacity:trendingRefLoading===ch.id?.5:1}}>{trendingRefLoading===ch.id?"...":trendingRefVideos[ch.id]?"✓ "+trendingRefVideos[ch.id].length+" vídeos":"▶ Buscar"}</button>
+                            <button onClick={()=>{setTrendingRefEdit({...ch});setTrendingRefModal(true);}} style={{...btnGhost,padding:"3px 6px",fontSize:10}}>✏️</button>
+                            <button onClick={()=>deleteTrendingRefChannel(ch.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:12}}>✕</button>
+                          </div>
+                        </div>
+                        {trendingRefVideos[ch.id]?.map((v,i)=>(
+                          <div key={v.id} style={{display:"flex",gap:8,padding:"6px 0",borderTop:"1px solid "+BOR,alignItems:"center"}}>
+                            <span style={{fontFamily:"'Bebas Neue'",fontSize:14,color:HINT,width:22,flexShrink:0}}>{i+1}</span>
+                            {v.thumb&&<img src={v.thumb} alt="" style={{width:56,height:40,borderRadius:3,objectFit:"cover",flexShrink:0}}/>}
+                            <div style={{flex:1,minWidth:0}}>
+                              <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:500,color:TEXT,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.title}</a>
+                              <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.views?.toLocaleString("pt-BR")} views</div>
+                            </div>
+                            <div style={{display:"flex",gap:4,flexShrink:0}}>
+                              <button onClick={()=>saveQuickIdea(v.title)} style={{...btnGhost,padding:"1px 6px",fontSize:9,color:GREEN,borderColor:GREEN+"33"}}>+ideia</button>
+                              <button onClick={()=>setUseAsBaseModal(v)} style={{...btnGhost,padding:"1px 6px",fontSize:9,color:ACCENT,borderColor:ACCENT+"33"}}>base</button>
+                            </div>
+                          </div>
+                        ))}
+                        {!trendingRefVideos[ch.id]&&<div style={{fontFamily:"'DM Sans'",fontSize:11,color:HINT,padding:"8px 0"}}>Clique em Buscar para carregar os vídeos.</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
               const list=trendingTab==="brasil"?trendingData.br:trendingTab==="mundial"?trendingData.global:trendingData.niches[trendingTab]||[];
               const virals=list.filter(v=>v.growth>50);
               if(trendingData.br.length===0&&trendingData.global.length===0)return(
@@ -1505,7 +1609,9 @@ export default function DarkApp(){
 
       {leadModal&&leadEdit&&<div onClick={e=>e.target===e.currentTarget&&(setLeadModal(false),setLeadEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:500,padding:26,maxHeight:"90vh",overflowY:"auto"}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>{leadEdit.id?"EDITAR LEAD":"NOVO LEAD"}</div><button onClick={()=>{setLeadModal(false);setLeadEdit(null);}} style={btnGhost}>✕</button></div><div style={{marginBottom:12}}><span style={lbl}>Nome</span><input value={leadEdit.name||""} onChange={e=>setLeadEdit({...leadEdit,name:e.target.value})} style={inp}/></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><div style={{marginBottom:12}}><span style={lbl}>Contato</span><input value={leadEdit.contact||""} onChange={e=>setLeadEdit({...leadEdit,contact:e.target.value})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Serviço</span><input value={leadEdit.service||""} onChange={e=>setLeadEdit({...leadEdit,service:e.target.value})} placeholder="Gestão de canal..." style={inp}/></div>
       <div style={{marginBottom:12,gridColumn:"1/-1"}}><span style={lbl}>📐 CALCULADORA DE PROPOSTA</span><div style={{background:BG3,borderRadius:8,padding:14}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}><div><span style={{...lbl,marginBottom:4}}>Duração (min)</span><input type="number" value={leadEdit.video_minutes||0} step="0.5" min="0" onChange={e=>{const min=parseFloat(e.target.value)||0;const desc=leadEdit.discount_pct||0;const bruto=min*6000;const final=bruto*(1-desc/100);setLeadEdit({...leadEdit,video_minutes:min,bruto_value:bruto,proposed_value:Math.round(final)});}} style={inp} placeholder="3.5"/></div><div><span style={{...lbl,marginBottom:4}}>Desconto %</span><input type="number" value={leadEdit.discount_pct||0} min="0" max="100" onChange={e=>{const desc=parseFloat(e.target.value)||0;const min=leadEdit.video_minutes||0;const bruto=min*6000;const final=bruto*(1-desc/100);setLeadEdit({...leadEdit,discount_pct:desc,bruto_value:bruto,proposed_value:Math.round(final)});}} style={inp} placeholder="30"/></div><div><span style={{...lbl,marginBottom:4}}>Valor final</span><div style={{background:BG2,border:"1px solid "+ACCENT+"44",borderRadius:6,padding:"8px 12px",fontFamily:"'Bebas Neue'",fontSize:16,color:ACCENT}}>{fmtCurrency(leadEdit.proposed_value||0)}</div></div></div>{(leadEdit.video_minutes||0)>0&&<div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{leadEdit.video_minutes}min × R$6.000 = {fmtCurrency((leadEdit.video_minutes||0)*6000)}{(leadEdit.discount_pct||0)>0?" — "+leadEdit.discount_pct+"% = "+fmtCurrency(leadEdit.proposed_value||0):""}</div>}</div></div>
-      <div style={{marginBottom:12}}><span style={lbl}>Status</span><select value={leadEdit.status||"novo"} onChange={e=>setLeadEdit({...leadEdit,status:e.target.value})} style={inp}>{["novo","proposta_enviada","em_negociacao","fechado","perdido"].map(s=><option key={s} value={s}>{s.replace(/_/g," ")}</option>)}</select></div><div style={{marginBottom:12}}><span style={lbl}>Nº alterações permitidas</span><input type="number" value={leadEdit.max_revisions||2} min="0" onChange={e=>setLeadEdit({...leadEdit,max_revisions:parseInt(e.target.value)||0})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Forma de pagamento</span><select value={leadEdit.payment_method||""} onChange={e=>setLeadEdit({...leadEdit,payment_method:e.target.value})} style={inp}><option value="">Selecionar...</option><option value="50_50">50% entrada + 50% entrega</option><option value="100_entrega">100% na entrega</option><option value="100_entrada">100% entrada</option><option value="parcelado">Parcelado</option></select></div><div style={{marginBottom:12}}><span style={lbl}>Prazo de entrega</span><input type="date" value={leadEdit.deadline||""} onChange={e=>setLeadEdit({...leadEdit,deadline:e.target.value})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Follow-up em</span><input type="date" value={leadEdit.follow_up_date||""} onChange={e=>setLeadEdit({...leadEdit,follow_up_date:e.target.value})} style={inp}/></div></div><div style={{marginBottom:14}}><span style={lbl}>Notas</span><textarea value={leadEdit.notes||""} onChange={e=>setLeadEdit({...leadEdit,notes:e.target.value})} style={{...inp,minHeight:60}}/></div><div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setLeadModal(false);setLeadEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveLead} style={btnGold}>SALVAR</button></div></div></div>}
+      <div style={{marginBottom:12}}><span style={lbl}>Status</span><select value={leadEdit.status||"novo"} onChange={e=>setLeadEdit({...leadEdit,status:e.target.value})} style={inp}>{["novo","proposta_enviada","em_negociacao","fechado","perdido"].map(s=><option key={s} value={s}>{s.replace(/_/g," ")}</option>)}</select></div><div style={{marginBottom:12}}><span style={lbl}>Nº alterações permitidas</span><input type="number" value={leadEdit.max_revisions||2} min="0" onChange={e=>setLeadEdit({...leadEdit,max_revisions:parseInt(e.target.value)||0})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Forma de pagamento</span><select value={leadEdit.payment_method||""} onChange={e=>setLeadEdit({...leadEdit,payment_method:e.target.value})} style={inp}><option value="">Selecionar...</option><option value="50_50">50% entrada + 50% entrega</option><option value="100_entrega">100% na entrega</option><option value="100_entrada">100% entrada</option><option value="parcelado">Parcelado</option></select></div><div style={{marginBottom:12}}><span style={lbl}>Prazo de entrega</span><input type="date" value={leadEdit.deadline||""} onChange={e=>setLeadEdit({...leadEdit,deadline:e.target.value})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Follow-up em</span><input type="date" value={leadEdit.follow_up_date||""} onChange={e=>setLeadEdit({...leadEdit,follow_up_date:e.target.value})} style={inp}/></div></div><div style={{marginBottom:12}}><span style={lbl}>Escopo <span style={{color:HINT,fontSize:9,textTransform:"none",letterSpacing:0}}>aparece na proposta</span></span><textarea value={leadEdit.escopo||""} onChange={e=>setLeadEdit({...leadEdit,escopo:e.target.value})} placeholder={"- Animação de personagens
+- Criação de cenários
+- Edição do clipe"} style={{...inp,minHeight:90,whiteSpace:"pre-wrap"}}/></div><div style={{marginBottom:14}}><span style={{...lbl,color:HINT}}>Notas internas</span><textarea value={leadEdit.notes||""} onChange={e=>setLeadEdit({...leadEdit,notes:e.target.value})} style={{...inp,minHeight:50}}/></div><div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setLeadModal(false);setLeadEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveLead} style={btnGold}>SALVAR</button></div></div></div>}
 
       {ideaModal&&ideaEdit&&<div onClick={e=>e.target===e.currentTarget&&(setIdeaModal(false),setIdeaEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:460,padding:26}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>{ideaEdit.id?"EDITAR IDEIA":"NOVA IDEIA"}</div><button onClick={()=>{setIdeaModal(false);setIdeaEdit(null);}} style={btnGhost}>✕</button></div><div style={{marginBottom:12}}><span style={lbl}>Título</span><input value={ideaEdit.title||""} onChange={e=>setIdeaEdit({...ideaEdit,title:e.target.value})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Nicho</span><select value={ideaEdit.niche||""} onChange={e=>setIdeaEdit({...ideaEdit,niche:e.target.value})} style={inp}><option value="">Geral</option>{activeNiches.map(n=><option key={n.id}>{n.name}</option>)}</select></div><div style={{marginBottom:14}}><span style={lbl}>Descrição</span><textarea value={ideaEdit.description||""} onChange={e=>setIdeaEdit({...ideaEdit,description:e.target.value})} style={{...inp,minHeight:80}}/></div><div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setIdeaModal(false);setIdeaEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveIdeaEdit} style={btnGold}>SALVAR</button></div></div></div>}
 
@@ -1619,10 +1725,10 @@ export default function DarkApp(){
                     ))}
                   </div>
                 </div>
-                {lead.notes&&(
+                {(lead.escopo||lead.notes)&&(
                   <div style={{borderTop:"1px solid "+BOR,paddingTop:16}}>
                     <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Escopo</div>
-                    <div style={{fontFamily:"'DM Sans'",fontSize:12,color:TEXT,lineHeight:1.6}}>{lead.notes}</div>
+                    <div style={{fontFamily:"'DM Sans'",fontSize:12,color:TEXT,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{lead.escopo||lead.notes}</div>
                   </div>
                 )}
                 <div style={{borderTop:"1px solid "+BOR,paddingTop:16,marginTop:16}}>
@@ -1643,40 +1749,103 @@ export default function DarkApp(){
       })()}
       {useAsBaseModal&&<div onClick={e=>e.target===e.currentTarget&&setUseAsBaseModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:150,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:480,padding:26}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>USAR COMO BASE</div><button onClick={()=>setUseAsBaseModal(null)} style={btnGhost}>✕</button></div><div style={{display:"flex",gap:12,marginBottom:18}}>{useAsBaseModal.thumb&&<img src={useAsBaseModal.thumb} alt="" style={{width:96,height:68,borderRadius:5,objectFit:"cover",flexShrink:0}}/>}<div style={{flex:1}}><div style={{fontFamily:"'DM Sans'",fontSize:13,fontWeight:600,marginBottom:3,lineHeight:1.4}}>{useAsBaseModal.title}</div><div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,marginBottom:3}}>{useAsBaseModal.channel}</div>{useAsBaseModal.views>0&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:11,color:ACCENT}}>{useAsBaseModal.views?.toLocaleString("pt-BR")} views</div>}<a href={useAsBaseModal.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:11,color:BLUE,display:"block",marginTop:4}}>▶ Assistir</a></div></div><div style={{marginBottom:16}}><span style={lbl}>Nicho</span><select value={useAsBaseModal.niche||activeNiches[0]?.name||""} onChange={e=>setUseAsBaseModal({...useAsBaseModal,niche:e.target.value})} style={inp}>{activeNiches.map(n=><option key={n.id} value={n.name}>{n.name}</option>)}</select></div><div style={{display:"flex",gap:9}}><button onClick={()=>setUseAsBaseModal(null)} style={btnGhost}>Cancelar</button><button onClick={()=>useVideoAsBase(useAsBaseModal,useAsBaseModal.niche)} style={{...btnGold,flex:1}}>🎬 CRIAR NO PIPELINE</button></div></div></div>}
 
-      {videoDetailModal&&<div onClick={e=>e.target===e.currentTarget&&setVideoDetailModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:150,display:"flex",alignItems:"flex-start",justifyContent:"flex-end"}}><div style={{background:BG2,borderLeft:"1px solid "+BOR2,width:"100%",maxWidth:660,height:"100vh",overflowY:"auto",padding:30}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22}}>
-          <div style={{flex:1,marginRight:14}}><input value={videoDetailModal.meu_titulo||videoDetailModal.title||""} onChange={e=>setVideoDetailModal({...videoDetailModal,meu_titulo:e.target.value})} style={{...inp,fontFamily:"'Bebas Neue'",fontSize:20,letterSpacing:1,background:"transparent",border:"none",borderBottom:"1px solid "+BOR2,borderRadius:0,padding:"3px 0",width:"100%"}} placeholder="Título do vídeo..."/></div>
-          <div style={{display:"flex",gap:7,flexShrink:0}}>
-            {videoDetailModal.id?<button onClick={()=>saveVideoDetail(videoDetailModal)} style={btnGold}>💾 SALVAR</button>:<button onClick={()=>createVideo(videoDetailModal)} style={btnGold}>🎬 CRIAR</button>}
-            <button onClick={()=>setVideoDetailModal(null)} style={btnGhost}>✕</button>
-          </div>
-        </div>
-        <div style={{marginBottom:14}}><span style={lbl}>Etapa</span><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{PIPELINE.map(s=>{const color=PIPELINE_COLORS[s];const active=videoDetailModal.status===s;return(<button key={s} onClick={()=>setVideoDetailModal({...videoDetailModal,status:s})} style={{...btnGhost,fontSize:11,padding:"4px 10px",color:active?color:MUTED,borderColor:active?color+"55":BOR,background:active?color+"12":undefined,fontWeight:active?600:400}}>{active?"● ":""}{s}</button>);})}</div></div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
-          <div><span style={lbl}>Nicho</span><select value={videoDetailModal.niche||""} onChange={e=>setVideoDetailModal({...videoDetailModal,niche:e.target.value})} style={inp}>{activeNiches.map(n=><option key={n.id}>{n.name}</option>)}</select></div>
-          <div><span style={lbl}>Data publicação</span><input type="date" value={videoDetailModal.publish_date||""} onChange={e=>setVideoDetailModal({...videoDetailModal,publish_date:e.target.value})} style={inp}/></div>
-          <div><span style={lbl}>Plataformas</span><div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:4}}>{["YouTube","Instagram","TikTok","Shorts"].map(p=>{const plats=videoDetailModal.platforms||[];const active=plats.includes(p);return<button key={p} onClick={()=>setVideoDetailModal({...videoDetailModal,platforms:active?plats.filter(x=>x!==p):[...plats,p]})} style={{...btnGhost,padding:"2px 6px",fontSize:10,color:active?ACCENT:MUTED,borderColor:active?ACCENT+"44":BOR,background:active?ACCENT+"10":undefined}}>{p}</button>;})}</div></div>
-        </div>
-        {videoDetailModal.ref_url&&<div style={{...card,marginBottom:16,borderColor:BLUE+"33"}}><span style={{...lbl,color:BLUE}}>📎 REFERÊNCIA</span><div style={{display:"flex",gap:10}}>{videoDetailModal.ref_thumb&&<img src={videoDetailModal.ref_thumb} alt="" style={{width:96,height:68,borderRadius:5,objectFit:"cover",flexShrink:0}}/>}<div style={{flex:1}}><a href={videoDetailModal.ref_url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:13,fontWeight:600,color:TEXT,textDecoration:"none",display:"block",marginBottom:3}}>{videoDetailModal.ref_titulo}</a><div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{videoDetailModal.ref_canal}</div>{videoDetailModal.ref_views>0&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:11,color:ACCENT}}>{videoDetailModal.ref_views?.toLocaleString("pt-BR")} views</div>}</div></div></div>}
-        <div style={{marginBottom:14}}><span style={lbl}>Hook (abertura)</span><input value={videoDetailModal.hook||""} onChange={e=>setVideoDetailModal({...videoDetailModal,hook:e.target.value})} placeholder="Em 1999, Joan Murray saltou de um avião..." style={inp}/></div>
-        <div style={{marginBottom:14}}><span style={lbl}>Meu roteiro</span><textarea value={videoDetailModal.meu_roteiro||""} onChange={e=>setVideoDetailModal({...videoDetailModal,meu_roteiro:e.target.value})} placeholder="Use [STOCK], [IMG-AI], [ANIM] para marcar tipo de visual..." style={{...inp,minHeight:180}}/></div>
-        <div style={{...card,marginBottom:14,borderColor:PURP+"33"}}>
-          <span style={{...lbl,color:PURP}}>📱 SHORT / REEL (60-90s)</span>
-          <div style={{marginBottom:10}}><span style={lbl}>Script do Short</span><textarea value={videoDetailModal.short_script||""} onChange={e=>setVideoDetailModal({...videoDetailModal,short_script:e.target.value})} placeholder="Script para o clone HeyGen..." style={{...inp,minHeight:80}}/></div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <div><span style={lbl}>Status do Short</span><select value={videoDetailModal.short_status||"pendente"} onChange={e=>setVideoDetailModal({...videoDetailModal,short_status:e.target.value})} style={inp}><option value="pendente">Pendente</option><option value="gravando">Gravando clone</option><option value="editando">Editando</option><option value="publicado">Publicado</option></select></div>
-            <div><span style={lbl}>Plataformas Short</span><div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:4}}>{["Shorts","Reels","TikTok"].map(p=>{const plats=videoDetailModal.short_platforms||[];const active=plats.includes(p);return<button key={p} onClick={()=>setVideoDetailModal({...videoDetailModal,short_platforms:active?plats.filter(x=>x!==p):[...plats,p]})} style={{...btnGhost,padding:"2px 6px",fontSize:10,color:active?PURP:MUTED,borderColor:active?PURP+"44":BOR,background:active?PURP+"10":undefined}}>{p}</button>;})}</div></div>
-          </div>
-        </div>
-        <div style={{marginBottom:14}}><span style={lbl}>Thumbnail</span><textarea value={videoDetailModal.minha_thumbnail||""} onChange={e=>setVideoDetailModal({...videoDetailModal,minha_thumbnail:e.target.value})} style={{...inp,minHeight:55}}/></div>
-        <div style={{marginBottom:14}}><span style={lbl}>Descrição YouTube</span><textarea value={videoDetailModal.descricao_yt||""} onChange={e=>setVideoDetailModal({...videoDetailModal,descricao_yt:e.target.value})} style={{...inp,minHeight:70}}/></div>
-        <div style={{marginBottom:22}}><span style={lbl}>Notas</span><textarea value={videoDetailModal.notes||""} onChange={e=>setVideoDetailModal({...videoDetailModal,notes:e.target.value})} style={{...inp,minHeight:55}}/></div>
-        <div style={{display:"flex",gap:9,paddingTop:14,borderTop:"1px solid "+BOR}}>
-          {videoDetailModal.id?<><button onClick={()=>saveVideoDetail(videoDetailModal)} style={{...btnGold,flex:1}}>💾 SALVAR</button><button onClick={()=>deleteVideo(videoDetailModal.id)} style={{...btnGhost,color:RED,borderColor:RED+"33"}}>🗑</button></>:<button onClick={()=>createVideo(videoDetailModal)} style={{...btnGold,flex:1}}>🎬 CRIAR NO PIPELINE</button>}
-        </div>
-      </div></div>}
+      {videoDetailModal&&(
+        <div onClick={e=>e.target===e.currentTarget&&setVideoDetailModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:150,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:CARD,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:680,maxHeight:"90vh",overflowY:"auto",padding:28}}>
 
-      {confetti&&(
+            {/* Header */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22}}>
+              <div style={{flex:1,marginRight:14}}>
+                <input value={videoDetailModal.meu_titulo||videoDetailModal.title||""} onChange={e=>setVideoDetailModal({...videoDetailModal,meu_titulo:e.target.value})} style={{...inp,fontFamily:"'Bebas Neue'",fontSize:22,letterSpacing:1,background:"transparent",border:"none",borderBottom:"1px solid "+BOR2,borderRadius:0,padding:"3px 0",width:"100%"}} placeholder="Título do vídeo..."/>
+              </div>
+              <div style={{display:"flex",gap:7,flexShrink:0}}>
+                {videoDetailModal.id?<button onClick={()=>saveVideoDetail(videoDetailModal)} style={btnGold}>💾 SALVAR</button>:<button onClick={()=>{const isW=videoDetailModal.niche==="Sr. Waldemar";isW?createWaldeVideo(videoDetailModal):createVideo(videoDetailModal);}} style={btnGold}>🎬 CRIAR</button>}
+                <button onClick={()=>setVideoDetailModal(null)} style={btnGhost}>✕</button>
+              </div>
+            </div>
+
+            {/* Status pipeline */}
+            <div style={{marginBottom:18}}>
+              <div style={lbl}>Etapa no pipeline</div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                {PIPELINE.map(s=>{const color=PIPELINE_COLORS[s];const active=videoDetailModal.status===s;return(<button key={s} onClick={()=>setVideoDetailModal({...videoDetailModal,status:s})} style={{...btnGhost,fontSize:11,padding:"4px 10px",color:active?color:MUTED,borderColor:active?color+"55":BOR,background:active?color+"12":undefined,fontWeight:active?600:400}}>{active?"● ":""}{s}</button>);})}
+              </div>
+            </div>
+
+            {/* Informações */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:18}}>
+              <div><div style={lbl}>Nicho</div><select value={videoDetailModal.niche||""} onChange={e=>setVideoDetailModal({...videoDetailModal,niche:e.target.value})} style={inp}><option value="Sr. Waldemar">⭐ Sr. Waldemar</option>{activeNiches.map(n=><option key={n.id}>{n.name}</option>)}</select></div>
+              <div><div style={lbl}>Data publicação</div><input type="date" value={videoDetailModal.publish_date||""} onChange={e=>setVideoDetailModal({...videoDetailModal,publish_date:e.target.value})} style={inp}/></div>
+              <div><div style={lbl}>Plataformas</div><div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:4}}>{["YouTube","Instagram","TikTok","Shorts"].map(p=>{const plats=videoDetailModal.platforms||[];const active=plats.includes(p);return<button key={p} onClick={()=>setVideoDetailModal({...videoDetailModal,platforms:active?plats.filter(x=>x!==p):[...plats,p]})} style={{...btnGhost,padding:"2px 6px",fontSize:10,color:active?ACCENT:MUTED,borderColor:active?ACCENT+"44":BOR,background:active?ACCENT+"10":undefined}}>{p}</button>;})}</div></div>
+            </div>
+
+            {/* Referência */}
+            <div style={{marginBottom:18,borderTop:"1px solid "+BOR,paddingTop:16}}>
+              <div style={lbl}>📎 Referência</div>
+              <div style={{marginBottom:10}}><div style={{...lbl,fontSize:10}}>Link YouTube manual</div><input value={videoDetailModal.ref_link_manual||""} onChange={e=>setVideoDetailModal({...videoDetailModal,ref_link_manual:e.target.value})} placeholder="https://youtube.com/watch?v=... (para vídeos que não aparecem na API)" style={inp}/></div>
+              {(videoDetailModal.ref_url||videoDetailModal.ref_link_manual)&&(
+                <div style={{background:BG3,borderRadius:8,padding:12,border:"1px solid "+BLUE+"33",display:"flex",gap:10}}>
+                  {videoDetailModal.ref_thumb&&<img src={videoDetailModal.ref_thumb} alt="" style={{width:96,height:68,borderRadius:5,objectFit:"cover",flexShrink:0}}/>}
+                  <div style={{flex:1}}>
+                    <a href={videoDetailModal.ref_url||videoDetailModal.ref_link_manual} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:13,fontWeight:600,color:TEXT,textDecoration:"none",display:"block",marginBottom:3}}>{videoDetailModal.ref_titulo||"Ver referência"}</a>
+                    {videoDetailModal.ref_canal&&<div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{videoDetailModal.ref_canal}</div>}
+                    {videoDetailModal.ref_views>0&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:11,color:ACCENT}}>{videoDetailModal.ref_views?.toLocaleString("pt-BR")} views</div>}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Roteiro */}
+            <div style={{marginBottom:18,borderTop:"1px solid "+BOR,paddingTop:16}}>
+              <div style={lbl}>📝 Roteiro</div>
+              <div style={{marginBottom:12}}><div style={{...lbl,fontSize:10}}>Hook (abertura)</div><input value={videoDetailModal.hook||""} onChange={e=>setVideoDetailModal({...videoDetailModal,hook:e.target.value})} placeholder="Em 1999, Joan Murray saltou de um avião..." style={inp}/></div>
+              <div><div style={{...lbl,fontSize:10}}>Roteiro completo <span style={{color:HINT,fontSize:9,textTransform:"none"}}>[STOCK] [IMG-AI] [ANIM]</span></div><textarea value={videoDetailModal.meu_roteiro||""} onChange={e=>setVideoDetailModal({...videoDetailModal,meu_roteiro:e.target.value})} placeholder="Use [STOCK] para footage, [IMG-AI] para imagem estática, [ANIM] para animação..." style={{...inp,minHeight:180}}/></div>
+            </div>
+
+            {/* Short/Reel */}
+            <div style={{marginBottom:18,borderTop:"1px solid "+BOR,paddingTop:16,background:PURP+"08",borderRadius:8,padding:16,marginTop:16}}>
+              <div style={{...lbl,color:PURP}}>📱 Short / Reel (60-90s)</div>
+              <div style={{marginBottom:10}}><div style={{...lbl,fontSize:10}}>Script para clone HeyGen</div><textarea value={videoDetailModal.short_script||""} onChange={e=>setVideoDetailModal({...videoDetailModal,short_script:e.target.value})} placeholder="Script do short..." style={{...inp,minHeight:80}}/></div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div><div style={{...lbl,fontSize:10}}>Status</div><select value={videoDetailModal.short_status||"pendente"} onChange={e=>setVideoDetailModal({...videoDetailModal,short_status:e.target.value})} style={inp}><option value="pendente">Pendente</option><option value="gravando">Gravando clone</option><option value="editando">Editando</option><option value="publicado">Publicado</option></select></div>
+                <div><div style={{...lbl,fontSize:10}}>Plataformas</div><div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:4}}>{["Shorts","Reels","TikTok"].map(p=>{const plats=videoDetailModal.short_platforms||[];const active=plats.includes(p);return<button key={p} onClick={()=>setVideoDetailModal({...videoDetailModal,short_platforms:active?plats.filter(x=>x!==p):[...plats,p]})} style={{...btnGhost,padding:"2px 6px",fontSize:10,color:active?PURP:MUTED,borderColor:active?PURP+"44":BOR,background:active?PURP+"10":undefined}}>{p}</button>;})}</div></div>
+              </div>
+            </div>
+
+            {/* Produção */}
+            <div style={{marginBottom:18,borderTop:"1px solid "+BOR,paddingTop:16}}>
+              <div style={lbl}>🎬 Produção</div>
+              <div style={{marginBottom:12}}><div style={{...lbl,fontSize:10}}>Thumbnail</div><textarea value={videoDetailModal.minha_thumbnail||""} onChange={e=>setVideoDetailModal({...videoDetailModal,minha_thumbnail:e.target.value})} placeholder="Descreva a ideia da thumbnail..." style={{...inp,minHeight:55}}/></div>
+              <div style={{marginBottom:12}}><div style={{...lbl,fontSize:10}}>Descrição YouTube</div><textarea value={videoDetailModal.descricao_yt||""} onChange={e=>setVideoDetailModal({...videoDetailModal,descricao_yt:e.target.value})} style={{...inp,minHeight:70}}/></div>
+              <div><div style={{...lbl,fontSize:10}}>📁 Link Drive — Locução</div><input value={videoDetailModal["drive_locuçao"]||""} onChange={e=>setVideoDetailModal({...videoDetailModal,"drive_locuçao":e.target.value})} placeholder="https://drive.google.com/..." style={inp}/></div>
+            </div>
+
+            {/* Escopo (público - aparece na proposta) */}
+            <div style={{marginBottom:18,borderTop:"1px solid "+BOR,paddingTop:16}}>
+              <div style={lbl}>📋 Escopo <span style={{color:HINT,fontSize:9,textTransform:"none",fontFamily:"'DM Sans'",letterSpacing:0}}>aparece na proposta</span></div>
+              <textarea value={videoDetailModal.escopo||""} onChange={e=>setVideoDetailModal({...videoDetailModal,escopo:e.target.value})} placeholder={"- Animação de personagens
+- Criação de cenários
+- Edição do clipe"} style={{...inp,minHeight:100,whiteSpace:"pre-wrap"}}/>
+            </div>
+
+            {/* Notas (interno) */}
+            <div style={{marginBottom:22,borderTop:"1px solid "+BOR,paddingTop:16}}>
+              <div style={{...lbl,color:HINT}}>🔒 Notas internas <span style={{color:HINT,fontSize:9,textTransform:"none",fontFamily:"'DM Sans'",letterSpacing:0}}>não aparece na proposta</span></div>
+              <textarea value={videoDetailModal.notes||""} onChange={e=>setVideoDetailModal({...videoDetailModal,notes:e.target.value})} style={{...inp,minHeight:55}}/>
+            </div>
+
+            {/* Footer */}
+            <div style={{display:"flex",gap:9,paddingTop:14,borderTop:"1px solid "+BOR}}>
+              {videoDetailModal.id?<><button onClick={()=>saveVideoDetail(videoDetailModal)} style={{...btnGold,flex:1}}>💾 SALVAR</button><button onClick={()=>deleteVideo(videoDetailModal.id)} style={{...btnGhost,color:RED,borderColor:RED+"33"}}>🗑</button></>:<button onClick={()=>{const isW=videoDetailModal.niche==="Sr. Waldemar";isW?createWaldeVideo(videoDetailModal):createVideo(videoDetailModal);}} style={{...btnGold,flex:1}}>🎬 CRIAR NO PIPELINE</button>}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {trendingRefModal&&trendingRefEdit&&<div onClick={e=>e.target===e.currentTarget&&(setTrendingRefModal(false),setTrendingRefEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:460,padding:26}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>{trendingRefEdit.id?"EDITAR CANAL":"NOVO CANAL REFERÊNCIA"}</div><button onClick={()=>{setTrendingRefModal(false);setTrendingRefEdit(null);}} style={btnGhost}>✕</button></div><div style={{marginBottom:12}}><span style={lbl}>Nome do canal</span><input value={trendingRefEdit.name||""} onChange={e=>setTrendingRefEdit({...trendingRefEdit,name:e.target.value})} placeholder="Ex: Cansei de ser Ot4rio" style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Channel ID <span style={{color:HINT,fontSize:9,textTransform:"none"}}>para buscar vídeos via API</span></span><input value={trendingRefEdit.channel_id||""} onChange={e=>setTrendingRefEdit({...trendingRefEdit,channel_id:e.target.value})} placeholder="UCxxxxxxxxxx" style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>URL do canal</span><input value={trendingRefEdit.url||""} onChange={e=>setTrendingRefEdit({...trendingRefEdit,url:e.target.value})} placeholder="https://youtube.com/@canal" style={inp}/></div><div style={{marginBottom:14}}><span style={lbl}>Notas</span><textarea value={trendingRefEdit.notes||""} onChange={e=>setTrendingRefEdit({...trendingRefEdit,notes:e.target.value})} placeholder="Por que esse canal é referência..." style={{...inp,minHeight:55}}/></div><div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setTrendingRefModal(false);setTrendingRefEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveTrendingRefChannel} style={btnGold}>SALVAR</button></div></div></div>}
+
+            {confetti&&(
         <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:9999}}>
           {Array.from({length:20},(_,i)=>(
             <div key={i} style={{position:"absolute",left:Math.random()*100+"vw",top:"-10px",width:7,height:7,borderRadius:2,background:[ACCENT,GREEN,BLUE,RED,PURP][i%5],animation:"cf "+(1+Math.random())+"s ease-in "+(Math.random()*.5)+"s forwards"}}/>
