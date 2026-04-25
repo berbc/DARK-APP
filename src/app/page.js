@@ -90,10 +90,10 @@ export default function DarkApp(){
   const [quickDest,setQuickDest]=useState("idea");
   const [weekOffset,setWeekOffset]=useState(0);
   const [dashIdeaInput,setDashIdeaInput]=useState("");
-  const [focusTaskId,setFocusTaskId]=useState(null);
+  const [focusTaskId,setFocusTaskId]=useState(()=>{try{return localStorage.getItem("dark_focus_task")||null;}catch{return null;}});
   const [timerRunning,setTimerRunning]=useState(false);
-  const [timerSeconds,setTimerSeconds]=useState(25*60);
-  const [timerMode,setTimerMode]=useState("work");
+  const [timerSeconds,setTimerSeconds]=useState(()=>{try{const s=parseInt(localStorage.getItem("dark_timer_seconds"));return isNaN(s)?25*60:s;}catch{return 25*60;}});
+  const [timerMode,setTimerMode]=useState(()=>{try{return localStorage.getItem("dark_timer_mode")||"work";}catch{return "work";}});
   const [activeEntry,setActiveEntry]=useState(null);
   const timerRef=useRef(null);
   const [videoDetailModal,setVideoDetailModal]=useState(null);
@@ -133,6 +133,15 @@ export default function DarkApp(){
   const [refChannelEdit,setRefChannelEdit]=useState(null);
   const [nicheModal,setNicheModal]=useState(false);
   const [nicheEdit,setNicheEdit]=useState(null);
+  const [proposalModal,setProposalModal]=useState(null);
+  const [leadFilter,setLeadFilter]=useState("todos");
+  const [leadSearch,setLeadSearch]=useState("");
+  const [wRefSection,setWRefSection]=useState("buscar");
+  const [wRefVideos,setWRefVideos]=useState({});
+  const [wRefLoading,setWRefLoading]=useState(null);
+  const [cmdK,setCmdK]=useState(false);
+  const [cmdKQuery,setCmdKQuery]=useState("");
+  const trendingAutoRef=useRef(null);
 
   const flash=()=>{setSaved(true);setTimeout(()=>setSaved(false),2000);};
   const flashError=m=>{setErrorMsg(m);setTimeout(()=>setErrorMsg(""),4000);};
@@ -183,13 +192,30 @@ export default function DarkApp(){
   },[]);
   useEffect(()=>{if(user)loadAll();},[user,loadAll]);
 
+  // CMD+K global search
+  useEffect(()=>{
+    const handler=e=>{if((e.metaKey||e.ctrlKey)&&e.key==="k"){e.preventDefault();setCmdK(o=>!o);setCmdKQuery("");}if(e.key==="Escape")setCmdK(false);};
+    window.addEventListener("keydown",handler);
+    return()=>window.removeEventListener("keydown",handler);
+  },[]);
+
+  // Auto-trending: update every 15min regardless of active tab, and on app load
+  useEffect(()=>{
+    const check=()=>{const apiKey=process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;if(!apiKey)return;const mins=lastUpdated?Math.round((new Date()-lastUpdated)/60000):999;if(mins>=15&&!trendingLoading)fetchTrending();};
+    check(); // fetch on mount
+    trendingAutoRef.current=setInterval(check,15*60*1000);
+    return()=>clearInterval(trendingAutoRef.current);
+  },[]);// eslint-disable-line
+
   const activeNiches=niches.filter(n=>n.active!==false);
 
   useEffect(()=>{
-    if(timerRunning){timerRef.current=setInterval(()=>{setTimerSeconds(s=>{if(s<=1){clearInterval(timerRef.current);setTimerRunning(false);handleTimerEnd();return timerMode==="work"?5*60:25*60;}return s-1;});},1000);}
+    if(timerRunning){timerRef.current=setInterval(()=>{setTimerSeconds(s=>{const next=s<=1?timerMode==="work"?5*60:25*60:s-1;try{localStorage.setItem("dark_timer_seconds",next);}catch{}if(s<=1){clearInterval(timerRef.current);setTimerRunning(false);handleTimerEnd();}return next;});},1000);}
     else clearInterval(timerRef.current);
     return()=>clearInterval(timerRef.current);
   },[timerRunning]);// eslint-disable-line
+  useEffect(()=>{try{localStorage.setItem("dark_timer_mode",timerMode);}catch{}},[timerMode]);
+  useEffect(()=>{try{if(focusTaskId)localStorage.setItem("dark_focus_task",focusTaskId);else localStorage.removeItem("dark_focus_task");}catch{}},[focusTaskId]);
 
   const handleTimerEnd=async()=>{
     if(timerMode==="work"){triggerConfetti();const ns={...userStats,xp:(userStats.xp||0)+25,pomodoros_completed:(userStats.pomodoros_completed||0)+1};setUserStats(ns);if(userStats.id)await supabase.from("user_stats").update(ns).eq("id",userStats.id);setTimerMode("break");}
@@ -294,8 +320,9 @@ export default function DarkApp(){
     else{const r=await supabase.from("ideas").insert(ideaEdit).select().single();if(r.data)setIdeas(prev=>[r.data,...prev]);}
     setIdeaModal(false);setIdeaEdit(null);flash();
   };
-  const saveQuickIdea=async title=>{const{data}=await supabase.from("ideas").insert({title,source:"quick"}).select().single();if(data)setIdeas(prev=>[data,...prev]);flash();};
-  const saveWaldeIdea=async(title,category)=>{const{data}=await supabase.from("ideas").insert({title,niche:"Sr. Waldemar",description:category||"",source:"waldemar"}).select().single();if(data)setIdeas(prev=>[data,...prev]);flash();};
+  const saveIdea=async(title,opts={})=>{const{data}=await supabase.from("ideas").insert({title,source:opts.source||"quick",niche:opts.niche||"",description:opts.description||""}).select().single();if(data)setIdeas(prev=>[data,...prev]);flash();};
+  const saveQuickIdea=async title=>saveIdea(title);
+  const saveWaldeIdea=async(title,category)=>saveIdea(title,{source:"waldemar",niche:"Sr. Waldemar",description:category||""});
   const deleteIdea=async id=>{await supabase.from("ideas").delete().eq("id",id);setIdeas(prev=>prev.filter(i=>i.id!==id));};
   const restoreIdea=async id=>{const{data}=await supabase.from("ideas").update({used:false}).eq("id",id).select().single();if(data)setIdeas(prev=>prev.map(i=>i.id===data.id?data:i));flash();};
   const useIdeaAsVideo=async idea=>{const dc=clients.find(c=>c.name==="Canais Dark");const{data}=await supabase.from("videos").insert({title:idea.title,niche:idea.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:dc?.id,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
@@ -313,6 +340,32 @@ export default function DarkApp(){
     setNicheModal(false);setNicheEdit(null);flash();
   };
   const deleteNiche=async id=>{await supabase.from("niches").delete().eq("id",id);setNiches(prev=>prev.filter(n=>n.id!==id));};
+
+  const WALDEMAR_THEMES=[{name:"História do Clube",kw:"história do Flamengo clube"},{name:"Ídolos e Jogadores",kw:"ídolos Flamengo jogadores lendários"},{name:"Jogos Inesquecíveis",kw:"Flamengo jogos inesquecíveis finais"},{name:"Fundação e Origem",kw:"fundação Flamengo origem 1895"},{name:"Torcida",kw:"torcida Flamengo maior brasil"},{name:"Títulos e Conquistas",kw:"Flamengo títulos conquistas campeonatos"},{name:"Rivalidades",kw:"Flamengo Fluminense Vasco rivalidade"},{name:"Libertadores 2019",kw:"Flamengo Libertadores 2019 Lima"}];
+  const fetchWaldeRefVideos=async theme=>{
+    const apiKey=process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
+    if(!apiKey||wRefVideos[theme.name])return;
+    setWRefLoading(theme.name);
+    try{
+      const r=await fetch("https://www.googleapis.com/youtube/v3/search?part=snippet&q="+encodeURIComponent(theme.kw)+"&type=video&order=viewCount&maxResults=8&key="+apiKey);
+      const d=await r.json();
+      const ids=(d.items||[]).map(i=>i.id?.videoId).filter(Boolean).join(",");
+      if(!ids){setWRefLoading(null);return;}
+      const s=await fetch("https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id="+ids+"&key="+apiKey);
+      const sd=await s.json();
+      setWRefVideos(prev=>({...prev,[theme.name]:(sd.items||[]).map(v=>({id:v.id,title:v.snippet?.title,channel:v.snippet?.channelTitle,thumb:v.snippet?.thumbnails?.medium?.url,views:parseInt(v.statistics?.viewCount||0),url:"https://youtube.com/watch?v="+v.id})).sort((a,b)=>b.views-a.views)}));
+    }catch(e){flashError("Erro ao buscar referências");}
+    setWRefLoading(null);
+  };
+
+  const generateProposal=lead=>{setProposalModal(lead);};
+  const getProposalHTML=lead=>{
+    const bruto=(lead.video_minutes||0)*6000;
+    const desconto=lead.discount_pct||0;
+    const final=lead.proposed_value||Math.round(bruto*(1-desconto/100));
+    const pmLabels={"50_50":"50% na aprovação + 50% na entrega","100_entrega":"100% na entrega","100_entrada":"100% antecipado","parcelado":"Parcelado (a combinar)"};
+    return{bruto,desconto,final,pmLabel:pmLabels[lead.payment_method]||lead.payment_method||"A combinar"};
+  };
   const toggleNicheActive=async n=>{const{data}=await supabase.from("niches").update({active:!n.active}).eq("id",n.id).select().single();if(data)setNiches(prev=>prev.map(x=>x.id===data.id?data:x));};
 
   const fetchTrending=useCallback(async()=>{
@@ -398,6 +451,7 @@ export default function DarkApp(){
         <div style={{fontFamily:"'Bebas Neue'",fontSize:20,letterSpacing:4,color:ACCENT}}>DARK APP</div>
         <div style={{fontFamily:"'DM Sans'",fontSize:9,color:MUTED,letterSpacing:2}}>PRODUCTION · FOCUS · FINANCE</div>
         <div style={{flex:1}}/>
+        <button onClick={()=>{setCmdK(true);setCmdKQuery("");}} style={{...btnGhost,fontSize:11,padding:"4px 12px",display:"flex",alignItems:"center",gap:6,color:MUTED,borderColor:BOR}}>🔍 <span>Buscar</span><kbd style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:HINT,background:BG3,border:"1px solid "+BOR,borderRadius:3,padding:"1px 4px"}}>⌘K</kbd></button>
         {saved&&<div style={{fontFamily:"'DM Sans'",fontSize:12,color:GREEN,background:GREEN+"15",padding:"3px 12px",borderRadius:20}}>✓ Salvo</div>}
         {errorMsg&&<div style={{fontFamily:"'DM Sans'",fontSize:12,color:RED,background:RED+"15",padding:"3px 12px",borderRadius:20}}>⚠ {errorMsg}</div>}
         {timerRunning&&<div style={{display:"flex",alignItems:"center",gap:8,background:(timerMode==="work"?ACCENT:GREEN)+"15",border:"1px solid "+(timerMode==="work"?ACCENT:GREEN)+"33",borderRadius:8,padding:"4px 12px"}}><span style={{fontFamily:"'Bebas Neue'",fontSize:18,color:timerMode==="work"?ACCENT:GREEN,letterSpacing:2}}>{timerFmt(timerSeconds)}</span><button onClick={()=>setTimerRunning(false)} style={{...btnGhost,padding:"1px 6px",fontSize:10}}>⏸</button></div>}
@@ -529,6 +583,53 @@ export default function DarkApp(){
                     );
                   })}
                 </div>
+              </div>
+            )}
+            {(trendingData.br.length>0||trendingData.global.length>0)&&(
+              <div style={{...card,marginTop:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>🔥 TRENDING AGORA</div>
+                  <button onClick={()=>setActiveTab(9)} style={{...btnGhost,fontSize:10,padding:"2px 8px",color:ACCENT,borderColor:ACCENT+"33"}}>ver tudo →</button>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                  {[{label:"🇧🇷 Brasil",list:trendingData.br.slice(0,5)},{label:"🌍 Mundial",list:trendingData.global.slice(0,5)}].map(({label,list})=>(
+                    <div key={label}>
+                      <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",marginBottom:8,fontWeight:600}}>{label}</div>
+                      {list.map((v,i)=>(
+                        <div key={v.id} style={{display:"flex",gap:8,alignItems:"center",padding:"5px 0",borderBottom:"1px solid "+BOR}}>
+                          <span style={{fontFamily:"'Bebas Neue'",fontSize:14,color:HINT,width:18,flexShrink:0}}>{i+1}</span>
+                          {v.thumb&&<img src={v.thumb} alt="" style={{width:44,height:32,borderRadius:3,objectFit:"cover",flexShrink:0}}/>}
+                          <div style={{flex:1,minWidth:0}}>
+                            <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:11,fontWeight:500,color:TEXT,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.title}</a>
+                            <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.views?.toLocaleString("pt-BR")} views</div>
+                          </div>
+                          {v.growth>50&&<span style={{background:RED+"20",color:RED,borderRadius:3,padding:"1px 5px",fontSize:9,fontWeight:600,flexShrink:0}}>🚀+{v.growth}%</span>}
+                          <button onClick={()=>saveQuickIdea(v.title)} style={{...btnGhost,padding:"1px 5px",fontSize:9,color:GREEN,borderColor:GREEN+"33",flexShrink:0}}>+</button>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+                {activeNiches.slice(0,2).map(n=>{
+                  const list=(trendingData.niches[n.name]||[]).slice(0,3);
+                  if(!list.length)return null;
+                  return(
+                    <div key={n.name} style={{marginTop:14}}>
+                      <div style={{fontFamily:"'DM Sans'",fontSize:10,color:ACCENT,letterSpacing:1,textTransform:"uppercase",marginBottom:8,fontWeight:600}}>{n.name}</div>
+                      {list.map((v,i)=>(
+                        <div key={v.id} style={{display:"flex",gap:8,alignItems:"center",padding:"5px 0",borderBottom:"1px solid "+BOR}}>
+                          <span style={{fontFamily:"'Bebas Neue'",fontSize:14,color:HINT,width:18,flexShrink:0}}>{i+1}</span>
+                          {v.thumb&&<img src={v.thumb} alt="" style={{width:44,height:32,borderRadius:3,objectFit:"cover",flexShrink:0}}/>}
+                          <div style={{flex:1,minWidth:0}}>
+                            <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:11,fontWeight:500,color:TEXT,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.title}</a>
+                            <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.views?.toLocaleString("pt-BR")} views</div>
+                          </div>
+                          <button onClick={()=>saveQuickIdea(v.title)} style={{...btnGhost,padding:"1px 5px",fontSize:9,color:GREEN,borderColor:GREEN+"33",flexShrink:0}}>+</button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -897,8 +998,8 @@ export default function DarkApp(){
                 <div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED}}>AI Entertainment · Flamengo · PT/EN/ES</div>
               </div>
               <div style={{display:"flex",gap:8}}>
-                {["ideias","pipeline","stats"].map(s=>(
-                  <button key={s} onClick={()=>setWSection(s)} style={{...btnGhost,color:wSection===s?ACCENT:MUTED,borderColor:wSection===s?ACCENT+"44":BOR,fontSize:12}}>{s==="ideias"?"💡 Ideias":s==="pipeline"?"🎬 Pipeline":"📊 Stats"}</button>
+                {["ideias","pipeline","referencias","stats"].map(s=>(
+                  <button key={s} onClick={()=>setWSection(s)} style={{...btnGhost,color:wSection===s?ACCENT:MUTED,borderColor:wSection===s?ACCENT+"44":BOR,fontSize:12}}>{s==="ideias"?"💡 Ideias":s==="pipeline"?"🎬 Pipeline":s==="referencias"?"📺 Referências":"📊 Stats"}</button>
                 ))}
                 <button onClick={()=>createVideo({niche:"Sr. Waldemar",client_id:clients.find(c=>c.name==="Sr. Waldemar")?.id})} style={btnGold}>+ NOVO VÍDEO</button>
               </div>
@@ -969,6 +1070,39 @@ export default function DarkApp(){
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            )}
+            {wSection==="referencias"&&(
+              <div>
+                <div style={{display:"flex",gap:7,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2,flex:1}}>📺 REFERÊNCIAS — FLAMENGO</div>
+                  <button onClick={()=>{WALDEMAR_THEMES.forEach(t=>fetchWaldeRefVideos(t));}} style={{...btnGold,fontSize:12}}>🔄 BUSCAR TODOS</button>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:14}}>
+                  {WALDEMAR_THEMES.map(theme=>(
+                    <div key={theme.name} style={{...card,marginBottom:0}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                        <div style={{fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:1,color:ACCENT}}>{theme.name}</div>
+                        <button onClick={()=>fetchWaldeRefVideos(theme)} disabled={wRefLoading===theme.name} style={{...btnGhost,fontSize:10,padding:"2px 8px",color:ACCENT,borderColor:ACCENT+"33",opacity:wRefLoading===theme.name?.5:1}}>{wRefLoading===theme.name?"...":wRefVideos[theme.name]?"✓ "+wRefVideos[theme.name].length:"▶ Buscar"}</button>
+                      </div>
+                      {wRefVideos[theme.name]?.map((v,i)=>(
+                        <div key={v.id} style={{display:"flex",gap:7,padding:"5px 0",borderBottom:"1px solid "+BOR,alignItems:"center"}}>
+                          <span style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:HINT,width:14,flexShrink:0}}>{i+1}</span>
+                          {v.thumb&&<img src={v.thumb} alt="" style={{width:48,height:34,borderRadius:3,objectFit:"cover",flexShrink:0}}/>}
+                          <div style={{flex:1,minWidth:0}}>
+                            <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:11,fontWeight:500,color:TEXT,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.title}</a>
+                            <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.channel} · {v.views?.toLocaleString("pt-BR")} views</div>
+                          </div>
+                          <div style={{display:"flex",gap:3,flexShrink:0}}>
+                            <button onClick={()=>saveWaldeIdea(v.title,theme.name)} style={{...btnGhost,padding:"1px 5px",fontSize:9,color:GREEN,borderColor:GREEN+"33"}}>+ideia</button>
+                            <button onClick={()=>setUseAsBaseModal({...v,niche:"Sr. Waldemar"})} style={{...btnGhost,padding:"1px 5px",fontSize:9,color:ACCENT,borderColor:ACCENT+"33"}}>base</button>
+                          </div>
+                        </div>
+                      ))}
+                      {!wRefVideos[theme.name]&&wRefLoading!==theme.name&&<div style={{fontFamily:"'DM Sans'",fontSize:11,color:HINT,padding:"8px 0"}}>Clique em Buscar para carregar.</div>}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -1063,38 +1197,63 @@ export default function DarkApp(){
                     </div>
                     <div style={{...card,marginTop:12}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                        <div style={{fontFamily:"'Bebas Neue'",fontSize:15,letterSpacing:2}}>LEADS ({leads.filter(l=>!l.converted).length})</div>
+                        <div style={{fontFamily:"'Bebas Neue'",fontSize:15,letterSpacing:2}}>LEADS</div>
                         <button onClick={()=>{setLeadEdit({name:"",contact:"",service:"",proposed_value:0,status:"novo",last_contact:today(),follow_up_date:"",notes:""});setLeadModal(true);}} style={{...btnGhost,fontSize:11,padding:"4px 10px"}}>+ Lead</button>
                       </div>
-                      {leads.filter(l=>!l.converted).map(lead=>{
+                      <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
+                        {["todos","novo","proposta_enviada","em_negociacao","fechado","perdido","followup"].map(f=>{
+                          const lbs={"todos":"Todos","novo":"Novo","proposta_enviada":"Proposta","em_negociacao":"Negociando","fechado":"Fechado","perdido":"Perdido","followup":"🔔 Follow-up"};
+                          const cnt=f==="todos"?leads.filter(l=>!l.converted).length:f==="followup"?leads.filter(l=>!l.converted&&l.follow_up_date&&deadlineDiff(l.follow_up_date)<=0).length:leads.filter(l=>!l.converted&&l.status===f).length;
+                          const isActive=leadFilter===f;
+                          return(<button key={f} onClick={()=>setLeadFilter(f)} style={{...btnGhost,fontSize:10,padding:"3px 9px",color:isActive?ACCENT:MUTED,borderColor:isActive?ACCENT+"44":BOR,background:isActive?ACCENT+"10":undefined}}>{lbs[f]} {cnt>0&&<span style={{background:f==="followup"?RED+"30":ACCENT+"20",color:f==="followup"?RED:ACCENT,borderRadius:10,padding:"0 5px",marginLeft:3,fontSize:9}}>{cnt}</span>}</button>);
+                        })}
+                        <input value={leadSearch} onChange={e=>setLeadSearch(e.target.value)} placeholder="🔍 Buscar..." style={{...inp,width:150,fontSize:11,padding:"4px 8px",marginLeft:"auto"}}/>
+                      </div>
+                      {(()=>{
+                        const totalPipeline=leads.filter(l=>!l.converted&&["novo","proposta_enviada","em_negociacao"].includes(l.status)).reduce((s,l)=>s+(l.proposed_value||0),0);
+                        const filtered=leads.filter(l=>{
+                          if(l.converted)return false;
+                          if(leadSearch&&!l.name.toLowerCase().includes(leadSearch.toLowerCase()))return false;
+                          if(leadFilter==="todos")return true;
+                          if(leadFilter==="followup")return l.follow_up_date&&deadlineDiff(l.follow_up_date)<=0;
+                          return l.status===leadFilter;
+                        });
                         const LSTATUS={"novo":{l:"Novo",c:BLUE},"proposta_enviada":{l:"Proposta",c:ACCENT},"em_negociacao":{l:"Negociando",c:ORANGE},"fechado":{l:"Fechado",c:GREEN},"perdido":{l:"Perdido",c:RED}};
-                        const ls=LSTATUS[lead.status]||LSTATUS["novo"];
-                        const fuDiff=lead.follow_up_date?deadlineDiff(lead.follow_up_date):null;
                         return(
-                          <div key={lead.id} style={{...card,marginBottom:7,background:BG3}}>
-                            <div style={{display:"flex",alignItems:"flex-start",gap:9}}>
-                              <div style={{flex:1}}>
-                                <div style={{display:"flex",gap:7,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
-                                  <div style={{fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:1}}>{lead.name}</div>
-                                  <span style={{background:ls.c+"20",color:ls.c,borderRadius:4,padding:"1px 7px",fontSize:10,fontWeight:600}}>{ls.l}</span>
-                                  {lead.proposed_value>0&&<span style={{fontFamily:"'IBM Plex Mono'",fontSize:11,color:ACCENT}}>R$ {lead.proposed_value.toLocaleString("pt-BR",{minimumFractionDigits:0})}</span>}
+                          <div>
+                            {totalPipeline>0&&<div style={{background:ACCENT+"10",border:"1px solid "+ACCENT+"22",borderRadius:6,padding:"6px 10px",marginBottom:10,fontFamily:"'DM Sans'",fontSize:12,color:ACCENT}}>💰 Pipeline total: <strong>{fmtCurrency(totalPipeline)}</strong></div>}
+                            {filtered.map(lead=>{
+                              const ls=LSTATUS[lead.status]||LSTATUS["novo"];
+                              const fuDiff=lead.follow_up_date?deadlineDiff(lead.follow_up_date):null;
+                              const fuOverdue=fuDiff!==null&&fuDiff<=0;
+                              return(
+                                <div key={lead.id} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 8px",borderBottom:"1px solid "+BOR,background:fuOverdue?RED+"06":undefined,borderRadius:4}}>
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:3,flexWrap:"wrap"}}>
+                                      <span style={{fontFamily:"'Bebas Neue'",fontSize:13,letterSpacing:1}}>{lead.name}</span>
+                                      <span style={{background:ls.c+"20",color:ls.c,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:600}}>{ls.l}</span>
+                                      {lead.proposed_value>0&&<span style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:ACCENT,fontWeight:600}}>{fmtCurrency(lead.proposed_value)}</span>}
+                                      {fuDiff!==null&&<span style={{fontSize:10,color:fuOverdue?RED:fuDiff<=2?ACCENT:MUTED}}>🔔{fuOverdue?"HOJE":fuDiff+"d"}</span>}
+                                    </div>
+                                    <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,display:"flex",gap:8,flexWrap:"wrap"}}>
+                                      {lead.contact&&<span>📱 {lead.contact}</span>}
+                                      {lead.service&&<span>🎯 {lead.service}</span>}
+                                      {lead.video_minutes>0&&<span>⏱ {lead.video_minutes}min</span>}
+                                    </div>
+                                  </div>
+                                  <div style={{display:"flex",gap:4,flexShrink:0}}>
+                                    <button onClick={()=>generateProposal(lead)} style={{...btnGhost,padding:"3px 7px",fontSize:10,color:PURP,borderColor:PURP+"44"}}>📄 Proposta</button>
+                                    <button onClick={()=>{setLeadEdit({...lead});setLeadModal(true);}} style={{...btnGhost,padding:"3px 6px",fontSize:10}}>✏️</button>
+                                    <button onClick={()=>convertLead(lead)} style={{...btnGhost,padding:"3px 7px",fontSize:10,color:GREEN,borderColor:GREEN+"44"}}>→ Cliente</button>
+                                    <button onClick={()=>deleteLead(lead.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:12}}>✕</button>
+                                  </div>
                                 </div>
-                                <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,display:"flex",gap:9,flexWrap:"wrap"}}>
-                                  {lead.contact&&<span>📱 {lead.contact}</span>}
-                                  {lead.service&&<span>🎯 {lead.service}</span>}
-                                  {fuDiff!==null&&<span style={{color:fuDiff<=0?RED:fuDiff<=2?ACCENT:MUTED}}>🔔 {fuDiff<=0?"Follow-up HOJE":"em "+fuDiff+"d"}</span>}
-                                </div>
-                              </div>
-                              <div style={{display:"flex",gap:4,flexShrink:0}}>
-                                <button onClick={()=>{setLeadEdit({...lead});setLeadModal(true);}} style={{...btnGhost,padding:"3px 6px",fontSize:10}}>✏️</button>
-                                <button onClick={()=>convertLead(lead)} style={{...btnGhost,padding:"3px 7px",fontSize:10,color:GREEN,borderColor:GREEN+"44"}}>→ Cliente</button>
-                                <button onClick={()=>deleteLead(lead.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:12}}>✕</button>
-                              </div>
-                            </div>
+                              );
+                            })}
+                            {filtered.length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:16}}>Nenhum lead neste filtro.</div>}
                           </div>
                         );
-                      })}
-                      {leads.filter(l=>!l.converted).length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:14}}>Nenhum lead ativo.</div>}
+                      })()}
                     </div>
                   </div>
                 );
@@ -1345,7 +1504,7 @@ export default function DarkApp(){
 
       {leadModal&&leadEdit&&<div onClick={e=>e.target===e.currentTarget&&(setLeadModal(false),setLeadEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:500,padding:26,maxHeight:"90vh",overflowY:"auto"}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>{leadEdit.id?"EDITAR LEAD":"NOVO LEAD"}</div><button onClick={()=>{setLeadModal(false);setLeadEdit(null);}} style={btnGhost}>✕</button></div><div style={{marginBottom:12}}><span style={lbl}>Nome</span><input value={leadEdit.name||""} onChange={e=>setLeadEdit({...leadEdit,name:e.target.value})} style={inp}/></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><div style={{marginBottom:12}}><span style={lbl}>Contato</span><input value={leadEdit.contact||""} onChange={e=>setLeadEdit({...leadEdit,contact:e.target.value})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Serviço</span><input value={leadEdit.service||""} onChange={e=>setLeadEdit({...leadEdit,service:e.target.value})} placeholder="Gestão de canal..." style={inp}/></div>
       <div style={{marginBottom:12,gridColumn:"1/-1"}}><span style={lbl}>📐 CALCULADORA DE PROPOSTA</span><div style={{background:BG3,borderRadius:8,padding:14}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}><div><span style={{...lbl,marginBottom:4}}>Duração (min)</span><input type="number" value={leadEdit.video_minutes||0} step="0.5" min="0" onChange={e=>{const min=parseFloat(e.target.value)||0;const desc=leadEdit.discount_pct||0;const bruto=min*6000;const final=bruto*(1-desc/100);setLeadEdit({...leadEdit,video_minutes:min,bruto_value:bruto,proposed_value:Math.round(final)});}} style={inp} placeholder="3.5"/></div><div><span style={{...lbl,marginBottom:4}}>Desconto %</span><input type="number" value={leadEdit.discount_pct||0} min="0" max="100" onChange={e=>{const desc=parseFloat(e.target.value)||0;const min=leadEdit.video_minutes||0;const bruto=min*6000;const final=bruto*(1-desc/100);setLeadEdit({...leadEdit,discount_pct:desc,bruto_value:bruto,proposed_value:Math.round(final)});}} style={inp} placeholder="30"/></div><div><span style={{...lbl,marginBottom:4}}>Valor final</span><div style={{background:BG2,border:"1px solid "+ACCENT+"44",borderRadius:6,padding:"8px 12px",fontFamily:"'Bebas Neue'",fontSize:16,color:ACCENT}}>{fmtCurrency(leadEdit.proposed_value||0)}</div></div></div>{(leadEdit.video_minutes||0)>0&&<div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{leadEdit.video_minutes}min × R$6.000 = {fmtCurrency((leadEdit.video_minutes||0)*6000)}{(leadEdit.discount_pct||0)>0?" — "+leadEdit.discount_pct+"% = "+fmtCurrency(leadEdit.proposed_value||0):""}</div>}</div></div>
-      <div style={{marginBottom:12}}><span style={lbl}>Status</span><select value={leadEdit.status||"novo"} onChange={e=>setLeadEdit({...leadEdit,status:e.target.value})} style={inp}>{["novo","proposta_enviada","em_negociacao","fechado","perdido"].map(s=><option key={s} value={s}>{s.replace(/_/g," ")}</option>)}</select></div><div style={{marginBottom:12}}><span style={lbl}>Nº alterações permitidas</span><input type="number" value={leadEdit.max_revisions||2} min="0" onChange={e=>setLeadEdit({...leadEdit,max_revisions:parseInt(e.target.value)||0})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Forma de pagamento</span><select value={leadEdit.payment_method||""} onChange={e=>setLeadEdit({...leadEdit,payment_method:e.target.value})} style={inp}><option value="">Selecionar...</option><option value="50_50">50% entrada + 50% entrega</option><option value="100_entrega">100% na entrega</option><option value="100_entrada">100% entrada</option><option value="parcelado">Parcelado</option></select></div><div style={{marginBottom:12}}><span style={lbl}>Follow-up em</span><input type="date" value={leadEdit.follow_up_date||""} onChange={e=>setLeadEdit({...leadEdit,follow_up_date:e.target.value})} style={inp}/></div></div><div style={{marginBottom:14}}><span style={lbl}>Notas</span><textarea value={leadEdit.notes||""} onChange={e=>setLeadEdit({...leadEdit,notes:e.target.value})} style={{...inp,minHeight:60}}/></div><div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setLeadModal(false);setLeadEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveLead} style={btnGold}>SALVAR</button></div></div></div>}
+      <div style={{marginBottom:12}}><span style={lbl}>Status</span><select value={leadEdit.status||"novo"} onChange={e=>setLeadEdit({...leadEdit,status:e.target.value})} style={inp}>{["novo","proposta_enviada","em_negociacao","fechado","perdido"].map(s=><option key={s} value={s}>{s.replace(/_/g," ")}</option>)}</select></div><div style={{marginBottom:12}}><span style={lbl}>Nº alterações permitidas</span><input type="number" value={leadEdit.max_revisions||2} min="0" onChange={e=>setLeadEdit({...leadEdit,max_revisions:parseInt(e.target.value)||0})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Forma de pagamento</span><select value={leadEdit.payment_method||""} onChange={e=>setLeadEdit({...leadEdit,payment_method:e.target.value})} style={inp}><option value="">Selecionar...</option><option value="50_50">50% entrada + 50% entrega</option><option value="100_entrega">100% na entrega</option><option value="100_entrada">100% entrada</option><option value="parcelado">Parcelado</option></select></div><div style={{marginBottom:12}}><span style={lbl}>Prazo de entrega</span><input type="date" value={leadEdit.deadline||""} onChange={e=>setLeadEdit({...leadEdit,deadline:e.target.value})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Follow-up em</span><input type="date" value={leadEdit.follow_up_date||""} onChange={e=>setLeadEdit({...leadEdit,follow_up_date:e.target.value})} style={inp}/></div></div><div style={{marginBottom:14}}><span style={lbl}>Notas</span><textarea value={leadEdit.notes||""} onChange={e=>setLeadEdit({...leadEdit,notes:e.target.value})} style={{...inp,minHeight:60}}/></div><div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setLeadModal(false);setLeadEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveLead} style={btnGold}>SALVAR</button></div></div></div>}
 
       {ideaModal&&ideaEdit&&<div onClick={e=>e.target===e.currentTarget&&(setIdeaModal(false),setIdeaEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:460,padding:26}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>{ideaEdit.id?"EDITAR IDEIA":"NOVA IDEIA"}</div><button onClick={()=>{setIdeaModal(false);setIdeaEdit(null);}} style={btnGhost}>✕</button></div><div style={{marginBottom:12}}><span style={lbl}>Título</span><input value={ideaEdit.title||""} onChange={e=>setIdeaEdit({...ideaEdit,title:e.target.value})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Nicho</span><select value={ideaEdit.niche||""} onChange={e=>setIdeaEdit({...ideaEdit,niche:e.target.value})} style={inp}><option value="">Geral</option>{activeNiches.map(n=><option key={n.id}>{n.name}</option>)}</select></div><div style={{marginBottom:14}}><span style={lbl}>Descrição</span><textarea value={ideaEdit.description||""} onChange={e=>setIdeaEdit({...ideaEdit,description:e.target.value})} style={{...inp,minHeight:80}}/></div><div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setIdeaModal(false);setIdeaEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveIdeaEdit} style={btnGold}>SALVAR</button></div></div></div>}
 
@@ -1353,6 +1512,134 @@ export default function DarkApp(){
 
       {refChannelModal&&refChannelEdit&&<div onClick={e=>e.target===e.currentTarget&&(setRefChannelModal(false),setRefChannelEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:460,padding:26}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>{refChannelEdit.id?"EDITAR CANAL":"NOVO CANAL"}</div><button onClick={()=>{setRefChannelModal(false);setRefChannelEdit(null);}} style={btnGhost}>✕</button></div><div style={{marginBottom:12}}><span style={lbl}>Nome</span><input value={refChannelEdit.name||""} onChange={e=>setRefChannelEdit({...refChannelEdit,name:e.target.value})} style={inp}/></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}><div><span style={lbl}>Nicho</span><select value={refChannelEdit.niche||""} onChange={e=>setRefChannelEdit({...refChannelEdit,niche:e.target.value})} style={inp}><option value="">Selecionar...</option>{niches.map(n=><option key={n.id}>{n.name}</option>)}</select></div><div><span style={lbl}>Inscritos</span><input value={refChannelEdit.subscribers||""} onChange={e=>setRefChannelEdit({...refChannelEdit,subscribers:e.target.value})} placeholder="14M" style={inp}/></div></div><div style={{marginBottom:12}}><span style={lbl}>URL</span><input value={refChannelEdit.url||""} onChange={e=>setRefChannelEdit({...refChannelEdit,url:e.target.value})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Channel ID</span><input value={refChannelEdit.channel_id||""} onChange={e=>setRefChannelEdit({...refChannelEdit,channel_id:e.target.value})} placeholder="UCxxxxxxxxxx" style={inp}/></div><div style={{marginBottom:14}}><span style={lbl}>Notas</span><textarea value={refChannelEdit.notes||""} onChange={e=>setRefChannelEdit({...refChannelEdit,notes:e.target.value})} style={{...inp,minHeight:55}}/></div><div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setRefChannelModal(false);setRefChannelEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveRefChannel} style={btnGold}>SALVAR</button></div></div></div>}
 
+      {cmdK&&(
+        <div onClick={()=>setCmdK(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:300,display:"flex",alignItems:"flex-start",justifyContent:"center",paddingTop:120}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:BG2,border:"1px solid "+BOR2,borderRadius:14,width:"100%",maxWidth:560,overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",borderBottom:"1px solid "+BOR}}>
+              <span style={{color:MUTED,fontSize:16}}>🔍</span>
+              <input autoFocus value={cmdKQuery} onChange={e=>setCmdKQuery(e.target.value)} placeholder="Buscar tarefa, cliente, vídeo, ideia..." style={{...inp,background:"transparent",border:"none",fontSize:15,flex:1,padding:0}} onKeyDown={e=>e.key==="Escape"&&setCmdK(false)}/>
+              <kbd style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:MUTED,background:BG3,border:"1px solid "+BOR,borderRadius:4,padding:"2px 6px"}}>ESC</kbd>
+            </div>
+            <div style={{maxHeight:400,overflowY:"auto",padding:8}}>
+              {cmdKQuery.trim().length<2?(
+                <div>
+                  <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",padding:"8px 10px 4px"}}>Atalhos rápidos</div>
+                  {[{label:"Dashboard",icon:"🏠",tab:0},{label:"Focus OS",icon:"⚡",tab:1},{label:"Metas",icon:"🎯",tab:2},{label:"Canais Dark",icon:"🎬",tab:4},{label:"Sr. Waldemar",icon:"⭐",tab:5},{label:"Clientes",icon:"◈",tab:6},{label:"Finanças",icon:"💰",tab:7},{label:"Trending",icon:"🔥",tab:9}].map(item=>(
+                    <div key={item.tab} onClick={()=>{setActiveTab(item.tab);setCmdK(false);}} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",borderRadius:7,cursor:"pointer",fontFamily:"'DM Sans'",fontSize:13}} className="hr">
+                      <span style={{fontSize:16}}>{item.icon}</span><span>{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+              ):(()=>{
+                const q=cmdKQuery.toLowerCase();
+                const results=[];
+                tasks.filter(t=>!t.done&&t.title.toLowerCase().includes(q)).slice(0,4).forEach(t=>results.push({type:"tarefa",icon:"✓",label:t.title,sub:getClientName(t.client_id),action:()=>{setTaskEdit({...t});setTaskModal(true);setCmdK(false);}}));
+                clients.filter(c=>c.name.toLowerCase().includes(q)).slice(0,3).forEach(c=>results.push({type:"cliente",icon:"◈",label:c.name,sub:c.type,action:()=>{setActiveTab(6);setSelectedClient(c);setCmdK(false);}}));
+                videos.filter(v=>(v.meu_titulo||v.title||"").toLowerCase().includes(q)).slice(0,4).forEach(v=>results.push({type:"vídeo",icon:"🎬",label:v.meu_titulo||v.title,sub:v.status+" · "+v.niche,action:()=>{setVideoDetailModal({...v});setCmdK(false);}}));
+                ideas.filter(i=>!i.used&&i.title.toLowerCase().includes(q)).slice(0,3).forEach(i=>results.push({type:"ideia",icon:"💡",label:i.title,sub:i.niche||"Geral",action:()=>{setIdeaEdit({...i});setIdeaModal(true);setCmdK(false);}}));
+                leads.filter(l=>!l.converted&&l.name.toLowerCase().includes(q)).slice(0,3).forEach(l=>results.push({type:"lead",icon:"📋",label:l.name,sub:l.service||l.status,action:()=>{setLeadEdit({...l});setLeadModal(true);setCmdK(false);}}));
+                if(!results.length)return <div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:24}}>Nenhum resultado para "{cmdKQuery}"</div>;
+                const types=[...new Set(results.map(r=>r.type))];
+                return types.map(type=>(
+                  <div key={type}>
+                    <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",padding:"8px 10px 4px"}}>{type}s</div>
+                    {results.filter(r=>r.type===type).map((r,i)=>(
+                      <div key={i} onClick={r.action} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",borderRadius:7,cursor:"pointer"}} className="hr">
+                        <span style={{fontSize:14,flexShrink:0}}>{r.icon}</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontFamily:"'DM Sans'",fontSize:13,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.label}</div>
+                          <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{r.sub}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ));
+              })()}
+            </div>
+            <div style={{padding:"8px 14px",borderTop:"1px solid "+BOR,display:"flex",gap:12}}>
+              <span style={{fontFamily:"'DM Sans'",fontSize:11,color:HINT}}>⌘K para abrir · ESC para fechar</span>
+              <span style={{fontFamily:"'DM Sans'",fontSize:11,color:HINT,marginLeft:"auto"}}>Busca: tarefas, clientes, vídeos, ideias, leads</span>
+            </div>
+          </div>
+        </div>
+      )}
+      {proposalModal&&(()=>{
+        const lead=proposalModal;
+        const{bruto,desconto,final,pmLabel}=getProposalHTML(lead);
+        const LSTATUS={"novo":"Novo","proposta_enviada":"Proposta Enviada","em_negociacao":"Em Negociação","fechado":"Fechado","perdido":"Perdido"};
+        const proposalText=`PROPOSTA COMERCIAL\n\nCliente: ${lead.name}\nServiço: ${lead.service||"Produção de vídeo"}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nESCOPO DO PROJETO\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${lead.notes||"Produção de vídeo animado com locução em off."}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nINVESTIMENTO\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nDuração: ${lead.video_minutes||0} minutos\nValor por minuto: R$ 6.000,00\nValor bruto: ${fmtCurrency(bruto)}${desconto>0?"\nDesconto: "+desconto+"%\nValor final: "+fmtCurrency(final):""}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCONDIÇÕES\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nForma de pagamento: ${pmLabel}\nNº de alterações inclusas: ${lead.max_revisions||2}\nPrazo de entrega: ${lead.deadline?fmtDate(lead.deadline):"A combinar"}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nOBSERVAÇÕES\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n• Alterações além do limite acordado serão cobradas à parte\n• O prazo inicia após aprovação do roteiro e pagamento da entrada\n• Revisões devem ser solicitadas em até 48h após entrega\n\nProposta válida por 7 dias.`;
+        return(
+          <div onClick={e=>e.target===e.currentTarget&&setProposalModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+            <div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:600,maxHeight:"90vh",overflowY:"auto",padding:30}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:22,letterSpacing:2}}>📄 PROPOSTA COMERCIAL</div>
+                <button onClick={()=>setProposalModal(null)} style={btnGhost}>✕</button>
+              </div>
+              <div style={{background:BG3,borderRadius:10,padding:24,marginBottom:20,border:"1px solid "+BOR2}}>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:2,marginBottom:4}}>{lead.name}</div>
+                <div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,marginBottom:20}}>{lead.service||"Produção de vídeo"}</div>
+                <div style={{borderTop:"1px solid "+BOR,paddingTop:16,marginBottom:16}}>
+                  <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Investimento</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                    <div style={{background:BG2,borderRadius:7,padding:"10px 12px"}}>
+                      <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,marginBottom:3}}>Duração</div>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:TEXT}}>{lead.video_minutes||0} minutos</div>
+                    </div>
+                    <div style={{background:BG2,borderRadius:7,padding:"10px 12px"}}>
+                      <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,marginBottom:3}}>Valor por minuto</div>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:TEXT}}>R$ 6.000</div>
+                    </div>
+                  </div>
+                  {desconto>0&&(
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,fontFamily:"'DM Sans'",fontSize:12}}>
+                      <span style={{color:MUTED}}>Valor bruto</span>
+                      <span style={{textDecoration:"line-through",color:MUTED}}>{fmtCurrency(bruto)}</span>
+                    </div>
+                  )}
+                  {desconto>0&&(
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,fontFamily:"'DM Sans'",fontSize:12}}>
+                      <span style={{color:GREEN}}>Desconto {desconto}%</span>
+                      <span style={{color:GREEN}}>- {fmtCurrency(bruto-final)}</span>
+                    </div>
+                  )}
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",borderTop:"1px solid "+BOR,marginTop:6}}>
+                    <span style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:1}}>VALOR FINAL</span>
+                    <span style={{fontFamily:"'Bebas Neue'",fontSize:22,color:ACCENT}}>{fmtCurrency(final)}</span>
+                  </div>
+                </div>
+                <div style={{borderTop:"1px solid "+BOR,paddingTop:16,marginBottom:16}}>
+                  <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Condições</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                    {[{l:"Pagamento",v:pmLabel},{l:"Alterações",v:(lead.max_revisions||2)+" inclusas"},{l:"Prazo",v:lead.deadline?fmtDate(lead.deadline):"A combinar"},{l:"Status",v:LSTATUS[lead.status]||"Novo"}].map(s=>(
+                      <div key={s.l} style={{background:BG2,borderRadius:6,padding:"8px 10px"}}>
+                        <div style={{fontFamily:"'DM Sans'",fontSize:9,color:MUTED,textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>{s.l}</div>
+                        <div style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:500}}>{s.v}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {lead.notes&&(
+                  <div style={{borderTop:"1px solid "+BOR,paddingTop:16}}>
+                    <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Escopo</div>
+                    <div style={{fontFamily:"'DM Sans'",fontSize:12,color:TEXT,lineHeight:1.6}}>{lead.notes}</div>
+                  </div>
+                )}
+                <div style={{borderTop:"1px solid "+BOR,paddingTop:16,marginTop:16}}>
+                  <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Observações</div>
+                  {["Alterações além do limite serão cobradas à parte","Prazo inicia após aprovação do roteiro e pagamento da entrada","Revisões devem ser solicitadas em até 48h após entrega","Proposta válida por 7 dias"].map((o,i)=>(
+                    <div key={i} style={{display:"flex",gap:6,marginBottom:5}}><span style={{color:ACCENT,fontSize:10,marginTop:2}}>→</span><span style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED}}>{o}</span></div>
+                  ))}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:9}}>
+                <button onClick={()=>{navigator.clipboard.writeText(proposalText);flash();}} style={{...btnGhost,flex:1,color:BLUE,borderColor:BLUE+"44"}}>📋 Copiar texto</button>
+                <button onClick={()=>{setLeadEdit({...lead});setProposalModal(null);setLeadModal(true);}} style={{...btnGhost,flex:1}}>✏️ Editar lead</button>
+                <button onClick={()=>setProposalModal(null)} style={btnGold}>✓ Fechar</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {useAsBaseModal&&<div onClick={e=>e.target===e.currentTarget&&setUseAsBaseModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:150,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:480,padding:26}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>USAR COMO BASE</div><button onClick={()=>setUseAsBaseModal(null)} style={btnGhost}>✕</button></div><div style={{display:"flex",gap:12,marginBottom:18}}>{useAsBaseModal.thumb&&<img src={useAsBaseModal.thumb} alt="" style={{width:96,height:68,borderRadius:5,objectFit:"cover",flexShrink:0}}/>}<div style={{flex:1}}><div style={{fontFamily:"'DM Sans'",fontSize:13,fontWeight:600,marginBottom:3,lineHeight:1.4}}>{useAsBaseModal.title}</div><div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,marginBottom:3}}>{useAsBaseModal.channel}</div>{useAsBaseModal.views>0&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:11,color:ACCENT}}>{useAsBaseModal.views?.toLocaleString("pt-BR")} views</div>}<a href={useAsBaseModal.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:11,color:BLUE,display:"block",marginTop:4}}>▶ Assistir</a></div></div><div style={{marginBottom:16}}><span style={lbl}>Nicho</span><select value={useAsBaseModal.niche||activeNiches[0]?.name||""} onChange={e=>setUseAsBaseModal({...useAsBaseModal,niche:e.target.value})} style={inp}>{activeNiches.map(n=><option key={n.id}>{n.name}</option>)}</select></div><div style={{display:"flex",gap:9}}><button onClick={()=>setUseAsBaseModal(null)} style={btnGhost}>Cancelar</button><button onClick={()=>useVideoAsBase(useAsBaseModal,useAsBaseModal.niche)} style={{...btnGold,flex:1}}>🎬 CRIAR NO PIPELINE</button></div></div></div>}
 
       {videoDetailModal&&<div onClick={e=>e.target===e.currentTarget&&setVideoDetailModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:150,display:"flex",alignItems:"flex-start",justifyContent:"flex-end"}}><div style={{background:BG2,borderLeft:"1px solid "+BOR2,width:"100%",maxWidth:660,height:"100vh",overflowY:"auto",padding:30}}>
