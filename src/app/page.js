@@ -292,16 +292,14 @@ export default function DarkApp(){
     if(data){setVideos(prev=>prev.map(v=>v.id===data.id?data:v));setVideoDetailModal(data);flash();}
   };
   const createVideo=async initial=>{
-    const dc=clients.find(c=>c.name==="Canais Dark");
-    const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:initial?.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:initial?.client_id||dc?.id,...(initial||{})}).select().single();
+    const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:initial?.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:initial?.client_id||darkClientId,...(initial||{})}).select().single();
     if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);}
   };
   const deleteVideo=async id=>{if(!confirm("Excluir?"))return;await supabase.from("videos").delete().eq("id",id);setVideos(prev=>prev.filter(v=>v.id!==id));setVideoDetailModal(null);};
   const moveVideo=async(id,status)=>{const{data}=await supabase.from("videos").update({status}).eq("id",id).select().single();if(data)setVideos(prev=>prev.map(v=>v.id===data.id?data:v));};
   const useVideoAsBase=async(rv,niche)=>{
     const isWalde=niche==="Sr. Waldemar";
-    const dc=clients.find(c=>c.name===(isWalde?"Sr. Waldemar":"Canais Dark"));
-    const{data}=await supabase.from("videos").insert({title:rv.title,niche:isWalde?"Sr. Waldemar":niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:dc?.id,ref_titulo:rv.title,ref_thumb:rv.thumb||"",ref_url:rv.url||"",ref_canal:rv.channel||"",ref_views:rv.views||0}).select().single();
+    const{data}=await supabase.from("videos").insert({title:rv.title,niche:isWalde?"Sr. Waldemar":niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:isWalde?waldeClientId:darkClientId,ref_titulo:rv.title,ref_thumb:rv.thumb||"",ref_url:rv.url||"",ref_canal:rv.channel||"",ref_views:rv.views||0}).select().single();
     if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);setUseAsBaseModal(null);setActiveTab(isWalde?5:4);flash();}
   };
   const openScript=v=>{setScriptData({...v});const takes=v.script?JSON.parse(v.script||"[]"):[];setScriptTakes(takes.length?takes:[{id:Date.now(),section:"GANCHO",startTime:"00:00",endTime:"00:07",angle:"A",narration:"",visual:"",prompt:""}]);setScriptModal(true);};
@@ -347,12 +345,12 @@ export default function DarkApp(){
   };
   const saveIdea=async(title,opts={})=>{const{data}=await supabase.from("ideas").insert({title,source:opts.source||"quick",niche:opts.niche||"",description:opts.description||""}).select().single();if(data)setIdeas(prev=>[data,...prev]);flash();};
   const saveQuickIdea=async title=>saveIdea(title);
-  const saveWaldeIdea=async(title,category)=>saveIdea(title,{source:"waldemar",niche:"Sr. Waldemar",description:category||""});
-  const createWaldeVideo=async initial=>{const wc=clients.find(c=>c.name==="Sr. Waldemar");const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:"Sr. Waldemar",status:"Roteiro",client_id:wc?.id,...(initial||{})}).select().single();if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);}};
-  const useWaldeIdeaAsVideo=async idea=>{const wc=clients.find(c=>c.name==="Sr. Waldemar");const{data}=await supabase.from("videos").insert({title:idea.title,niche:"Sr. Waldemar",status:"Roteiro",client_id:wc?.id,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
+  const saveWaldeIdea=async(title,category)=>saveIdea(title,{source:"waldemar",niche:"Sr. Waldemar",client_id:waldeClientId,description:category||""});
+  const createWaldeVideo=async initial=>{const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:"Sr. Waldemar",status:"Roteiro",client_id:waldeClientId,...(initial||{})}).select().single();if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);}};
+  const useWaldeIdeaAsVideo=async idea=>{const{data}=await supabase.from("videos").insert({title:idea.title,niche:"Sr. Waldemar",status:"Roteiro",client_id:waldeClientId,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
   const deleteIdea=async id=>{await supabase.from("ideas").delete().eq("id",id);setIdeas(prev=>prev.filter(i=>i.id!==id));};
   const restoreIdea=async id=>{const{data}=await supabase.from("ideas").update({used:false}).eq("id",id).select().single();if(data)setIdeas(prev=>prev.map(i=>i.id===data.id?data:i));flash();};
-  const useIdeaAsVideo=async idea=>{const dc=clients.find(c=>c.name==="Canais Dark");const{data}=await supabase.from("videos").insert({title:idea.title,niche:idea.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:dc?.id,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
+  const useIdeaAsVideo=async idea=>{const{data}=await supabase.from("videos").insert({title:idea.title,niche:idea.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:darkClientId,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
   const saveRefChannel=async()=>{
     if(!refChannelEdit?.name?.trim())return;
     if(refChannelEdit.id){const r=await supabase.from("ref_channels").update(refChannelEdit).eq("id",refChannelEdit.id).select().single();if(r.data)setRefChannels(prev=>prev.map(c=>c.id===r.data.id?r.data:c));}
@@ -492,8 +490,12 @@ export default function DarkApp(){
   const topGoals=activeGoals.slice(0,3).map(g=>({...g,plan:calcGoalPlan(g)}));
   const weekTasks=pendingTasks.filter(t=>t.deadline&&deadlineDiff(t.deadline)<=7&&deadlineDiff(t.deadline)>0);
   const thisMonthKey=thisMonth();
-  const wVideos=videos.filter(v=>v.client_id===clients.find(c=>c.name==="Sr. Waldemar")?.id);
-  const wIdeas=ideas.filter(i=>i.niche==="Sr. Waldemar"||i.source==="waldemar");
+  const waldeClientId=clients.find(c=>c.name==="Sr. Waldemar")?.id;
+  const darkClientId=clients.find(c=>c.name==="Canais Dark")?.id;
+  const wVideos=videos.filter(v=>v.client_id===waldeClientId);
+  const darkVideos=videos.filter(v=>v.client_id===darkClientId);
+  const wIdeas=ideas.filter(i=>i.client_id===waldeClientId||i.niche==="Sr. Waldemar"||i.source==="waldemar");
+  const darkIdeas=ideas.filter(i=>!i.used&&i.client_id!==waldeClientId&&i.source!=="waldemar"&&i.niche!=="Sr. Waldemar");
 
   return (
     <div style={{background:BG,minHeight:"100vh",color:TEXT}}>
@@ -604,7 +606,7 @@ export default function DarkApp(){
                   <input value={dashIdeaInput} onChange={e=>setDashIdeaInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&dashIdeaInput.trim()){saveQuickIdea(dashIdeaInput.trim());setDashIdeaInput("");}}} placeholder="Capturar ideia..." style={{...inp,flex:1,fontSize:12,padding:"6px 10px"}}/>
                   <button onClick={()=>{if(dashIdeaInput.trim()){saveQuickIdea(dashIdeaInput.trim());setDashIdeaInput("");}}} style={{...btnGold,padding:"6px 12px",fontSize:13}}>+</button>
                 </div>
-                {ideas.filter(i=>!i.used&&i.source!=="waldemar"&&i.niche!=="Sr. Waldemar").slice(0,5).map(i=>(
+                {darkIdeas.slice(0,5).map(i=>(
                   <div key={i.id} className="hr" style={{display:"flex",alignItems:"center",gap:8,padding:"7px 5px",borderBottom:"1px solid "+BOR,borderRadius:4}}>
                     <div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={()=>{setIdeaEdit({...i});setIdeaModal(true);}}>
                       <div style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.title}</div>
@@ -614,7 +616,7 @@ export default function DarkApp(){
                     <button onClick={()=>deleteIdea(i.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:12}}>✕</button>
                   </div>
                 ))}
-                {ideas.filter(i=>!i.used&&i.source!=="waldemar"&&i.niche!=="Sr. Waldemar").length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:12}}>Capture sua próxima ideia acima.</div>}
+                {darkIdeas.length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:12}}>Capture sua próxima ideia acima.</div>}
               </div>
             </div>
             {weekTasks.length>0&&(
@@ -912,7 +914,7 @@ export default function DarkApp(){
                     <input value={wInput} onChange={e=>setWInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&wInput.trim()){saveQuickIdea(wInput.trim());setWInput("");}}} placeholder="Nova ideia..." style={{...inp,flex:1}}/>
                     <button onClick={()=>{if(wInput.trim()){saveQuickIdea(wInput.trim());setWInput("");}}} style={btnGold}>+</button>
                   </div>
-                  {ideas.filter(i=>!i.used&&i.source!=="waldemar"&&i.niche!=="Sr. Waldemar").map(i=>(
+                  {darkIdeas.map(i=>(
                     <div key={i.id} className="hr" style={{display:"flex",alignItems:"center",gap:8,padding:"8px 5px",borderBottom:"1px solid "+BOR,borderRadius:4}}>
                       <div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={()=>{setIdeaEdit({...i});setIdeaModal(true);}}>
                         <div style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.title}</div>
@@ -922,7 +924,7 @@ export default function DarkApp(){
                       <button onClick={()=>deleteIdea(i.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:12}}>✕</button>
                     </div>
                   ))}
-                  {ideas.filter(i=>!i.used&&i.source!=="waldemar"&&i.niche!=="Sr. Waldemar").length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:16}}>Banco vazio.</div>}
+                  {darkIdeas.length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:16}}>Banco vazio.</div>}
                 </div>
                 <div style={card}>
                   <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:2,marginBottom:12}}>✓ USADAS</div>
