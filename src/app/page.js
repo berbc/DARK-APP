@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
 
 const BG="#1C1C1E",BG2="#232325",BG3="#2A2A2D",CARD="#2C2C2F";
@@ -526,15 +526,15 @@ export default function DarkApp(){
   // ─── RENDER ───────────────────────────────────────────────
   const urgentToday=pendingTasks.filter(t=>t.urgency==="hot"||deadlineDiff(t.deadline)<=0);
   const nextTask=pendingTasks[0];
-  const stuckVideos=videos.filter(v=>v.status!=="Postagem"&&v.client_id===clients.find(c=>c.name==="Canais Dark")?.id).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).slice(0,3);
+  const stuckVideos=videos.filter(v=>v.status!=="Postagem"&&v.client_id===_darkId).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).slice(0,3);
   const topGoals=activeGoals.slice(0,3).map(g=>({...g,plan:calcGoalPlan(g)}));
   const weekTasks=pendingTasks.filter(t=>t.deadline&&deadlineDiff(t.deadline)<=7&&deadlineDiff(t.deadline)>0);
   const thisMonthKey=thisMonth();
-  const waldeClientId=useMemo(()=>clients.find(c=>c.name==="Sr. Waldemar")?.id,[clients]);
-  const darkClientId=useMemo(()=>clients.find(c=>c.name==="Canais Dark")?.id,[clients]);
-  const wVideos=useMemo(()=>videos.filter(v=>v.client_id===waldeClientId),[videos,waldeClientId]);
-  const wIdeas=useMemo(()=>ideas.filter(i=>waldeClientId?i.client_id===waldeClientId:(i.niche==="Sr. Waldemar"||i.source==="waldemar")),[ideas,waldeClientId]);
-  const darkIdeas=useMemo(()=>ideas.filter(i=>!i.used&&i.niche!=="Sr. Waldemar"&&i.source!=="waldemar"&&i.client_id!==waldeClientId),[ideas,waldeClientId]);
+  const _waldeId=clients.find(c=>c.name==="Sr. Waldemar")?.id;
+  const _darkId=clients.find(c=>c.name==="Canais Dark")?.id;
+  const wVideos=videos.filter(v=>_waldeId?v.client_id===_waldeId:v.niche==="Sr. Waldemar");
+  const wIdeas=ideas.filter(i=>_waldeId?i.client_id===_waldeId:(i.niche==="Sr. Waldemar"||i.source==="waldemar"));
+  const darkIdeas=ideas.filter(i=>!i.used&&i.niche!=="Sr. Waldemar"&&i.source!=="waldemar"&&(!_waldeId||i.client_id!==_waldeId));
 
   return (
     <div style={{background:BG,minHeight:"100vh",color:TEXT}}>
