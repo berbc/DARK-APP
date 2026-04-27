@@ -381,8 +381,8 @@ export default function DarkApp(){
       const d=await r.json();
       const ch=d.items?.[0];
       if(ch){setFn(prev=>({...prev,channel_id:ch.id,name:prev.name||ch.snippet?.title||""}));}
-      else{alert("Canal não encontrado. Verifique a URL.");}
-    }catch(e){alert("Erro ao buscar canal.");}
+      else{flashError("Canal não encontrado. Verifique a URL.");}
+    }catch(e){flashError("Erro ao buscar canal.");}
   };
   const loadTrendingRefChannels=async()=>{const{data}=await supabase.from("trending_ref_channels").select("*").order("name");if(data)setTrendingRefChannels(data);};
   useEffect(()=>{if(user)loadTrendingRefChannels();},[user]);// eslint-disable-line
@@ -504,14 +504,13 @@ export default function DarkApp(){
   // ─── RENDER ───────────────────────────────────────────────
   const urgentToday=pendingTasks.filter(t=>t.urgency==="hot"||deadlineDiff(t.deadline)<=0);
   const nextTask=pendingTasks[0];
-  const stuckVideos=videos.filter(v=>v.status!=="Postagem").sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).slice(0,3);
+  const stuckVideos=videos.filter(v=>v.status!=="Postagem"&&v.client_id===darkClientId).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).slice(0,3);
   const topGoals=activeGoals.slice(0,3).map(g=>({...g,plan:calcGoalPlan(g)}));
   const weekTasks=pendingTasks.filter(t=>t.deadline&&deadlineDiff(t.deadline)<=7&&deadlineDiff(t.deadline)>0);
   const thisMonthKey=thisMonth();
   const waldeClientId=clients.find(c=>c.name==="Sr. Waldemar")?.id;
   const darkClientId=clients.find(c=>c.name==="Canais Dark")?.id;
   const wVideos=videos.filter(v=>v.client_id===waldeClientId);
-  const darkVideos=videos.filter(v=>v.client_id===darkClientId);
   const wIdeas=ideas.filter(i=>i.client_id===waldeClientId||i.niche==="Sr. Waldemar"||i.source==="waldemar");
   const darkIdeas=ideas.filter(i=>!i.used&&i.client_id!==waldeClientId&&i.source!=="waldemar"&&i.niche!=="Sr. Waldemar");
 
@@ -544,7 +543,7 @@ export default function DarkApp(){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22}}>
               <div>
                 <div style={{fontFamily:"'Bebas Neue'",fontSize:30,letterSpacing:1}}>{greeting()} <span style={{color:ACCENT}}>BERNARDO.</span></div>
-                <div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED,marginTop:4}}>{new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long"})} · {pendingTasks.length} pendentes</div>
+                <div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED,marginTop:4}}>{new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long"})} · {pendingTasks.length} pendentes{overdueLeads.length>0&&<span style={{color:RED,marginLeft:8}}>· {overdueLeads.length} leads atrasados</span>}</div>
               </div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
@@ -655,6 +654,22 @@ export default function DarkApp(){
                     );
                   })}
                 </div>
+              </div>
+            )}
+            {vencendoBreve.length>0&&(
+              <div style={{...card,marginTop:0,borderColor:RED+"44",background:RED+"06"}}>
+                <div style={{fontFamily:"'DM Sans'",fontSize:10,color:RED,letterSpacing:1,textTransform:"uppercase",marginBottom:10,fontWeight:600}}>⚠ NFs VENCENDO EM BREVE — {vencendoBreve.length}</div>
+                {vencendoBreve.map(i=>(
+                  <div key={i.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 5px",borderBottom:"1px solid "+BOR}}>
+                    <div style={{flex:1}}>
+                      <div style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:500}}>{i.description||"Sem descrição"}</div>
+                      <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{getClientName(i.client_id)}</div>
+                    </div>
+                    <span style={{fontFamily:"'IBM Plex Mono'",fontSize:11,color:ACCENT,fontWeight:600}}>{fmtCurrency(i.amount)}</span>
+                    <span style={{background:deadlineColor(i.due_date)+"20",color:deadlineColor(i.due_date),borderRadius:4,padding:"2px 6px",fontSize:10,fontWeight:600}}>{deadlineLabel(i.due_date)}</span>
+                    <button onClick={()=>markInvoicePaid(i.id)} style={{...btnGhost,padding:"2px 8px",fontSize:10,color:GREEN,borderColor:GREEN+"33"}}>✓ pago</button>
+                  </div>
+                ))}
               </div>
             )}
             {(trendingData.br.length>0||trendingData.global.length>0)&&(
@@ -1615,7 +1630,7 @@ export default function DarkApp(){
 
       <button onClick={()=>setQuickCapture(true)} style={{position:"fixed",bottom:26,right:26,width:50,height:50,borderRadius:"50%",background:ACCENT,color:"#111",border:"none",cursor:"pointer",fontSize:22,fontWeight:700,boxShadow:"0 4px 18px "+ACCENT+"50",zIndex:100}} onMouseEnter={e=>e.currentTarget.style.transform="scale(1.1)"} onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>+</button>
 
-      {quickCapture&&<div onClick={e=>e.target===e.currentTarget&&setQuickCapture(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:400,padding:26}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2,marginBottom:14}}>CAPTURA RÁPIDA</div><textarea value={quickText} onChange={e=>setQuickText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&saveQuickCapture&&null} placeholder="Ideia, tarefa, pensamento..." style={{...inp,minHeight:70,marginBottom:12}} autoFocus/><div style={{display:"flex",gap:7,marginBottom:14}}>{[["idea","💡 Ideia"],["task","✓ Tarefa"]].map(([v,l])=><button key={v} onClick={()=>setQuickDest(v)} style={{...btnGhost,flex:1,color:quickDest===v?ACCENT:MUTED,borderColor:quickDest===v?ACCENT+"44":BOR,background:quickDest===v?ACCENT+"10":undefined}}>{l}</button>)}</div><div style={{display:"flex",gap:9}}><button onClick={()=>setQuickCapture(false)} style={btnGhost}>Cancelar</button><button onClick={async()=>{if(!quickText.trim())return;if(quickDest==="idea"){const{data}=await supabase.from("ideas").insert({title:quickText.trim(),source:"quick"}).select().single();if(data)setIdeas(prev=>[data,...prev]);}else{const{data}=await supabase.from("tasks").insert({title:quickText.trim(),urgency:"normal",estimated_hours:1}).select().single();if(data)setTasks(prev=>[data,...prev]);}setQuickText("");setQuickCapture(false);flash();}} style={{...btnGold,flex:1}}>SALVAR</button></div></div></div>}
+      {quickCapture&&<div onClick={e=>e.target===e.currentTarget&&setQuickCapture(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:400,padding:26}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2,marginBottom:14}}>CAPTURA RÁPIDA</div><textarea value={quickText} onChange={e=>setQuickText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();document.getElementById("quickSaveBtn")?.click();}}} placeholder="Ideia, tarefa, pensamento..." style={{...inp,minHeight:70,marginBottom:12}} autoFocus/><div style={{display:"flex",gap:7,marginBottom:14}}>{[["idea","💡 Ideia"],["task","✓ Tarefa"]].map(([v,l])=><button key={v} onClick={()=>setQuickDest(v)} style={{...btnGhost,flex:1,color:quickDest===v?ACCENT:MUTED,borderColor:quickDest===v?ACCENT+"44":BOR,background:quickDest===v?ACCENT+"10":undefined}}>{l}</button>)}</div><div style={{display:"flex",gap:9}}><button onClick={()=>setQuickCapture(false)} style={btnGhost}>Cancelar</button><button id="quickSaveBtn" onClick={async()=>{if(!quickText.trim())return;if(quickDest==="idea"){const{data}=await supabase.from("ideas").insert({title:quickText.trim(),source:"quick"}).select().single();if(data)setIdeas(prev=>[data,...prev]);}else{const{data}=await supabase.from("tasks").insert({title:quickText.trim(),urgency:"normal",estimated_hours:1}).select().single();if(data)setTasks(prev=>[data,...prev]);}setQuickText("");setQuickCapture(false);flash();}} style={{...btnGold,flex:1}}>SALVAR</button></div></div></div>}
 
       {taskModal&&taskEdit&&<div onClick={e=>e.target===e.currentTarget&&(setTaskModal(false),setTaskEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:520,padding:26,maxHeight:"90vh",overflowY:"auto"}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>{taskEdit.id?"EDITAR TAREFA":"NOVA TAREFA"}</div><button onClick={()=>{setTaskModal(false);setTaskEdit(null);}} style={btnGhost}>✕</button></div><div style={{marginBottom:12}}><span style={lbl}>Título</span><input value={taskEdit.title||""} onChange={e=>setTaskEdit({...taskEdit,title:e.target.value})} style={inp}/></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><div style={{marginBottom:12}}><span style={lbl}>Cliente</span><select value={taskEdit.client_id||""} onChange={e=>setTaskEdit({...taskEdit,client_id:e.target.value})} style={inp}><option value="">Sem cliente</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div><div style={{marginBottom:12}}><span style={lbl}>Tipo</span><select value={taskEdit.type||"Roteiro"} onChange={e=>setTaskEdit({...taskEdit,type:e.target.value})} style={inp}>{TASK_TYPES.map(t=><option key={t}>{t}</option>)}</select></div><div style={{marginBottom:12}}><span style={lbl}>Urgência</span><select value={taskEdit.urgency||"normal"} onChange={e=>setTaskEdit({...taskEdit,urgency:e.target.value})} style={inp}><option value="normal">Normal</option><option value="warn">Atenção</option><option value="hot">Urgente 🔥</option></select></div><div style={{marginBottom:12}}><span style={lbl}>Horas est.</span><input type="number" value={taskEdit.estimated_hours||1} step="0.5" min="0.5" onChange={e=>setTaskEdit({...taskEdit,estimated_hours:parseFloat(e.target.value)||1})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Data</span><input type="date" value={taskEdit.deadline||""} onChange={e=>setTaskEdit({...taskEdit,deadline:e.target.value})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Horário</span><input type="time" value={taskEdit.task_time||""} onChange={e=>setTaskEdit({...taskEdit,task_time:e.target.value})} style={inp}/></div></div><div style={{marginBottom:14}}><span style={lbl}>Notas</span><textarea value={taskEdit.notes||""} onChange={e=>setTaskEdit({...taskEdit,notes:e.target.value})} style={{...inp,minHeight:55}}/></div><div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setTaskModal(false);setTaskEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveTask} style={btnGold}>SALVAR</button></div></div></div>}
 
