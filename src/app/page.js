@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "../lib/supabase";
 
 const BG="#1C1C1E",BG2="#232325",BG3="#2A2A2D",CARD="#2C2C2F";
@@ -151,6 +151,23 @@ export default function DarkApp(){
   const flash=()=>{setSaved(true);setTimeout(()=>setSaved(false),2000);};
   const flashError=m=>{setErrorMsg(m);setTimeout(()=>setErrorMsg(""),4000);};
   const triggerConfetti=()=>{setConfetti(true);setTimeout(()=>setConfetti(false),2500);};
+  const playTimerSound=(type="work")=>{
+    try{
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      const notes=type==="work"?[523,659,784,1047]:[784,659,523];
+      notes.forEach((freq,i)=>{
+        const osc=ctx.createOscillator();
+        const gain=ctx.createGain();
+        osc.connect(gain);gain.connect(ctx.destination);
+        osc.frequency.value=freq;
+        osc.type="sine";
+        gain.gain.setValueAtTime(0.3,ctx.currentTime+i*0.18);
+        gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+i*0.18+0.3);
+        osc.start(ctx.currentTime+i*0.18);
+        osc.stop(ctx.currentTime+i*0.18+0.3);
+      });
+    }catch(e){}
+  };
 
   useEffect(()=>{
     supabase.auth.getSession().then(({data:{session}})=>{setUser(session?.user??null);setCheckingAuth(false);});
@@ -236,11 +253,13 @@ export default function DarkApp(){
   const handleTimerEnd=async()=>{
     if(timerMode==="work"){
       triggerConfetti();
+      playTimerSound("work");
       const ns={...userStats,xp:(userStats.xp||0)+25,pomodoros_completed:(userStats.pomodoros_completed||0)+1};
       setUserStats(ns);if(userStats.id)await supabase.from("user_stats").update(ns).eq("id",userStats.id);
       setTimerMode("break");setTimerSeconds(5*60);
       try{localStorage.setItem("dark_timer_mode","break");localStorage.setItem("dark_timer_seconds",5*60);}catch{}
     } else {
+      playTimerSound("break");
       setTimerMode("work");setTimerSeconds(25*60);
       try{localStorage.setItem("dark_timer_mode","work");localStorage.setItem("dark_timer_seconds",25*60);}catch{}
     }
@@ -292,14 +311,17 @@ export default function DarkApp(){
     if(data){setVideos(prev=>prev.map(v=>v.id===data.id?data:v));setVideoDetailModal(data);flash();}
   };
   const createVideo=async initial=>{
-    const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:initial?.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:initial?.client_id||darkClientId,...(initial||{})}).select().single();
+    const dc=clients.find(c=>c.name==="Canais Dark")?.id;
+    const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:initial?.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:initial?.client_id||dc,...(initial||{})}).select().single();
     if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);}
   };
   const deleteVideo=async id=>{if(!confirm("Excluir?"))return;await supabase.from("videos").delete().eq("id",id);setVideos(prev=>prev.filter(v=>v.id!==id));setVideoDetailModal(null);};
   const moveVideo=async(id,status)=>{const{data}=await supabase.from("videos").update({status}).eq("id",id).select().single();if(data)setVideos(prev=>prev.map(v=>v.id===data.id?data:v));};
   const useVideoAsBase=async(rv,niche)=>{
     const isWalde=niche==="Sr. Waldemar";
-    const{data}=await supabase.from("videos").insert({title:rv.title,niche:isWalde?"Sr. Waldemar":niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:isWalde?waldeClientId:darkClientId,ref_titulo:rv.title,ref_thumb:rv.thumb||"",ref_url:rv.url||"",ref_canal:rv.channel||"",ref_views:rv.views||0}).select().single();
+    const wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;
+    const dc=clients.find(c=>c.name==="Canais Dark")?.id;
+    const{data}=await supabase.from("videos").insert({title:rv.title,niche:isWalde?"Sr. Waldemar":niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:isWalde?wc:dc,ref_titulo:rv.title,ref_thumb:rv.thumb||"",ref_url:rv.url||"",ref_canal:rv.channel||"",ref_views:rv.views||0}).select().single();
     if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);setUseAsBaseModal(null);setActiveTab(isWalde?5:4);flash();}
   };
   const openScript=v=>{setScriptData({...v});const takes=v.script?JSON.parse(v.script||"[]"):[];setScriptTakes(takes.length?takes:[{id:Date.now(),section:"GANCHO",startTime:"00:00",endTime:"00:07",angle:"A",narration:"",visual:"",prompt:""}]);setScriptModal(true);};
@@ -345,12 +367,12 @@ export default function DarkApp(){
   };
   const saveIdea=async(title,opts={})=>{const{data}=await supabase.from("ideas").insert({title,source:opts.source||"quick",niche:opts.niche||"",description:opts.description||""}).select().single();if(data)setIdeas(prev=>[data,...prev]);flash();};
   const saveQuickIdea=async title=>saveIdea(title);
-  const saveWaldeIdea=async(title,category)=>saveIdea(title,{source:"waldemar",niche:"Sr. Waldemar",client_id:waldeClientId,description:category||""});
-  const createWaldeVideo=async initial=>{const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:"Sr. Waldemar",status:"Roteiro",client_id:waldeClientId,...(initial||{})}).select().single();if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);}};
-  const useWaldeIdeaAsVideo=async idea=>{const{data}=await supabase.from("videos").insert({title:idea.title,niche:"Sr. Waldemar",status:"Roteiro",client_id:waldeClientId,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
+  const saveWaldeIdea=async(title,category)=>{const wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;return saveIdea(title,{source:"waldemar",niche:"Sr. Waldemar",client_id:wc,description:category||""}); };
+  const createWaldeVideo=async initial=>{const wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:"Sr. Waldemar",status:"Roteiro",client_id:wc,...(initial||{})}).select().single();if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);}};
+  const useWaldeIdeaAsVideo=async idea=>{const wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;const{data}=await supabase.from("videos").insert({title:idea.title,niche:"Sr. Waldemar",status:"Roteiro",client_id:wc,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);setActiveTab(5);setWSection("pipeline");flash();}};
   const deleteIdea=async id=>{await supabase.from("ideas").delete().eq("id",id);setIdeas(prev=>prev.filter(i=>i.id!==id));};
   const restoreIdea=async id=>{const{data}=await supabase.from("ideas").update({used:false}).eq("id",id).select().single();if(data)setIdeas(prev=>prev.map(i=>i.id===data.id?data:i));flash();};
-  const useIdeaAsVideo=async idea=>{const{data}=await supabase.from("videos").insert({title:idea.title,niche:idea.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:darkClientId,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
+  const useIdeaAsVideo=async idea=>{const dc=clients.find(c=>c.name==="Canais Dark")?.id;const{data}=await supabase.from("videos").insert({title:idea.title,niche:idea.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:dc,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
   const saveRefChannel=async()=>{
     if(!refChannelEdit?.name?.trim())return;
     if(refChannelEdit.id){const r=await supabase.from("ref_channels").update(refChannelEdit).eq("id",refChannelEdit.id).select().single();if(r.data)setRefChannels(prev=>prev.map(c=>c.id===r.data.id?r.data:c));}
@@ -504,15 +526,15 @@ export default function DarkApp(){
   // ─── RENDER ───────────────────────────────────────────────
   const urgentToday=pendingTasks.filter(t=>t.urgency==="hot"||deadlineDiff(t.deadline)<=0);
   const nextTask=pendingTasks[0];
-  const stuckVideos=videos.filter(v=>v.status!=="Postagem"&&v.client_id===darkClientId).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).slice(0,3);
+  const stuckVideos=videos.filter(v=>v.status!=="Postagem"&&v.client_id===clients.find(c=>c.name==="Canais Dark")?.id).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).slice(0,3);
   const topGoals=activeGoals.slice(0,3).map(g=>({...g,plan:calcGoalPlan(g)}));
   const weekTasks=pendingTasks.filter(t=>t.deadline&&deadlineDiff(t.deadline)<=7&&deadlineDiff(t.deadline)>0);
   const thisMonthKey=thisMonth();
-  const waldeClientId=clients.find(c=>c.name==="Sr. Waldemar")?.id;
-  const darkClientId=clients.find(c=>c.name==="Canais Dark")?.id;
-  const wVideos=videos.filter(v=>v.client_id===waldeClientId);
-  const wIdeas=ideas.filter(i=>i.client_id===waldeClientId||i.niche==="Sr. Waldemar"||i.source==="waldemar");
-  const darkIdeas=ideas.filter(i=>!i.used&&i.client_id!==waldeClientId&&i.source!=="waldemar"&&i.niche!=="Sr. Waldemar");
+  const waldeClientId=useMemo(()=>clients.find(c=>c.name==="Sr. Waldemar")?.id,[clients]);
+  const darkClientId=useMemo(()=>clients.find(c=>c.name==="Canais Dark")?.id,[clients]);
+  const wVideos=useMemo(()=>videos.filter(v=>v.client_id===waldeClientId),[videos,waldeClientId]);
+  const wIdeas=useMemo(()=>ideas.filter(i=>waldeClientId?i.client_id===waldeClientId:(i.niche==="Sr. Waldemar"||i.source==="waldemar")),[ideas,waldeClientId]);
+  const darkIdeas=useMemo(()=>ideas.filter(i=>!i.used&&i.niche!=="Sr. Waldemar"&&i.source!=="waldemar"&&i.client_id!==waldeClientId),[ideas,waldeClientId]);
 
   return (
     <div style={{background:BG,minHeight:"100vh",color:TEXT}}>
