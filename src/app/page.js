@@ -1077,44 +1077,49 @@ export default function DarkApp(){
               </div>
             </div>
             {wSection==="ideias"&&(
-              <div>
-                <div style={{...card,marginBottom:16}}>
-                  <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>CAPTURAR IDEIA</div>
-                  <div style={{display:"flex",gap:8}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
+                <div style={card}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                    <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:2}}>💡 BANCO DE IDEIAS</div>
+                    <span style={{fontFamily:"'IBM Plex Mono'",fontSize:11,color:MUTED}}>{wIdeas.filter(i=>!i.used).length} ideias</span>
+                  </div>
+                  <div style={{display:"flex",gap:8,marginBottom:14}}>
                     <input value={wInput} onChange={e=>setWInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&wInput.trim()){saveWaldeIdea(wInput.trim());setWInput("");}}} placeholder="Nova ideia sobre Flamengo..." style={{...inp,flex:1}}/>
                     <button onClick={()=>{if(wInput.trim()){saveWaldeIdea(wInput.trim());setWInput("");}}} style={btnGold}>+</button>
                   </div>
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14,marginBottom:20}}>
-                  {FLAMENGO_CATEGORIES.map(cat=>{
-                    const catIdeas=wIdeas.filter(i=>(i.description===cat.name||i.category===cat.name)&&!i.used);
-                    return(
-                      <div key={cat.name} style={{...card,borderLeft:"3px solid "+cat.color,marginBottom:0}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                          <div style={{fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:1}}>{cat.icon} {cat.name}</div>
-                          <span style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:MUTED}}>{catIdeas.length} ideias</span>
-                        </div>
-                        {catIdeas.slice(0,3).map(i=>(
-                          <div key={i.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid "+BOR}}>
-                            <div style={{flex:1,fontFamily:"'DM Sans'",fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.title}</div>
-                            <button onClick={()=>useWaldeIdeaAsVideo(i)} style={{...btnGhost,padding:"1px 7px",fontSize:10,color:GREEN,borderColor:GREEN+"33",flexShrink:0}}>→</button>
-                            <button onClick={()=>deleteIdea(i.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:11}}>✕</button>
-                          </div>
-                        ))}
-                        {catIdeas.length===0&&(
-                          <button onClick={()=>saveWaldeIdea(IDEA_SEEDS.find(s=>s.category===cat.name)?.title||"Ideia sobre "+cat.name,cat.name)} style={{...btnGhost,width:"100%",fontSize:11,color:cat.color,borderColor:cat.color+"33"}}>+ Sugestão automática</button>
-                        )}
+                  {wIdeas.filter(i=>!i.used).length===0&&(
+                    <div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:20}}>
+                      Nenhuma ideia ainda. Capture acima ou use as sugestões prontas abaixo.
+                    </div>
+                  )}
+                  {wIdeas.filter(i=>!i.used).map(i=>(
+                    <div key={i.id} className="hr" style={{display:"flex",alignItems:"center",gap:8,padding:"8px 5px",borderBottom:"1px solid "+BOR,borderRadius:4}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.title}</div>
+                        {i.description&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:MUTED}}>{i.description}</div>}
                       </div>
-                    );
-                  })}
+                      <button onClick={()=>useWaldeIdeaAsVideo(i)} style={{...btnGhost,padding:"2px 7px",fontSize:10,color:GREEN,borderColor:GREEN+"33",flexShrink:0}}>usar →</button>
+                      <button onClick={()=>deleteIdea(i.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:12}}>✕</button>
+                    </div>
+                  ))}
+                  <div style={{marginTop:16,borderTop:"1px solid "+BOR,paddingTop:14}}>
+                    <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>SUGESTÕES PRONTAS</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                      {IDEA_SEEDS.filter(s=>!wIdeas.find(i=>i.title===s.title)).map((s,idx)=>(
+                        <button key={idx} onClick={()=>saveWaldeIdea(s.title,s.category)} style={{...btnGhost,fontSize:11,padding:"4px 10px",color:ACCENT,borderColor:ACCENT+"33",textAlign:"left"}}>+ {s.title}</button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
                 <div style={card}>
-                  <div style={{fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:2,marginBottom:12}}>💡 SUGESTÕES PRONTAS</div>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                    {IDEA_SEEDS.filter(s=>!ideas.find(i=>i.title===s.title)).map((s,idx)=>(
-                      <button key={idx} onClick={()=>saveWaldeIdea(s.title,s.category)} style={{...btnGhost,fontSize:11,padding:"5px 12px",color:ACCENT,borderColor:ACCENT+"33",textAlign:"left"}}>+ {s.title}</button>
-                    ))}
-                  </div>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:2,marginBottom:12}}>✓ USADAS</div>
+                  {wIdeas.filter(i=>i.used).length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED}}>Nenhuma ideia usada ainda.</div>}
+                  {wIdeas.filter(i=>i.used).map(i=>(
+                    <div key={i.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderBottom:"1px solid "+BOR}}>
+                      <div style={{flex:1,fontFamily:"'DM Sans'",fontSize:12,textDecoration:"line-through",opacity:.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.title}</div>
+                      <button onClick={()=>restoreIdea(i.id)} style={{...btnGhost,padding:"2px 8px",fontSize:10,color:ACCENT,borderColor:ACCENT+"33",flexShrink:0}}>↩ devolver</button>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
