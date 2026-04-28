@@ -12,7 +12,7 @@ const inp={background:BG3,border:"1px solid "+BOR,borderRadius:6,color:TEXT,padd
 const btnGold={background:ACCENT,color:"#111",border:"none",borderRadius:6,padding:"8px 18px",cursor:"pointer",fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:1};
 const btnGhost={background:"transparent",color:MUTED,border:"1px solid "+BOR,borderRadius:6,padding:"8px 18px",cursor:"pointer",fontFamily:"'DM Sans'",fontSize:13};
 
-const TABS=["🏠 Dashboard","⚡ Focus OS","🎯 Metas","📅 Agenda","🎬 Canais Dark","⭐ Sr. Waldemar","◈ Clientes","💰 Finanças","📚 Biblioteca","🔥 Trending"];
+const TABS=["🏠 Dashboard","⚡ Focus OS","🎯 Metas","📅 Agenda","🎬 Canais Dark","⭐ Sr. Waldemar","🌍 Int'l Channels","◈ Clientes","💰 Finanças","📚 Biblioteca","🔥 Trending"];
 const PIPELINE=["Roteiro","Locução","Geração de Imagens","Edição","Thumb e Título","Postagem"];
 const PIPELINE_COLORS={"Roteiro":ACCENT,"Locução":BLUE,"Geração de Imagens":PURP,"Edição":RED,"Thumb e Título":ORANGE,"Postagem":GREEN};
 const TASK_TYPES=["Roteiro","Gravação","Edição","Thumbnail","Revisão","Upload","Reunião","Pesquisa","Postagem"];
@@ -24,6 +24,16 @@ const DEFAULT_NICHES=[{name:"Curiosidades Gerais",keyword:"curiosidades fatos in
 const FLAMENGO_CATEGORIES=[{name:"História",icon:"📜",color:RED},{name:"Jogadores Lendários",icon:"⚽",color:ACCENT},{name:"Partidas Históricas",icon:"🏆",color:GREEN},{name:"Mascote & Símbolos",icon:"🦅",color:ORANGE},{name:"Fundação & Origem",icon:"🏛",color:BLUE},{name:"Rivalidades",icon:"🔥",color:RED},{name:"Títulos",icon:"🥇",color:ACCENT},{name:"Curiosidades",icon:"💡",color:PURP}];
 const IDEA_SEEDS=[{title:"A história secreta da fundação do Flamengo em 1895",category:"Fundação & Origem"},{title:"Zico: o maior jogador da história do Flamengo",category:"Jogadores Lendários"},{title:"A maior goleada da história do Flamengo",category:"Partidas Históricas"},{title:"O Urubu: a história do mascote mais famoso do Brasil",category:"Mascote & Símbolos"},{title:"Flamengo x Fluminense: a maior rivalidade do Rio",category:"Rivalidades"},{title:"Libertadores 2019: a noite que parou o Brasil",category:"Títulos"},{title:"Por que o Flamengo tem mais torcedores que qualquer time do mundo?",category:"Curiosidades"},{title:"Adriano Imperador: ascensão e queda de um gênio",category:"Jogadores Lendários"},{title:"A história da Gávea: o CT mais famoso do futebol brasileiro",category:"História"},{title:"Gabigol: o herói que virou lenda em uma noite",category:"Jogadores Lendários"}];
 
+const INTL_CHANNELS=[
+  {key:"decoded_minds",name:"Decoded Minds",flag:"🇺🇸",lang:"EN",color:"#60A5FA",niche:"Psychology & Decisions",cpm:"$15-25"},
+  {key:"mente_descifrada",name:"Mente Descifrada",flag:"🇪🇸",lang:"ES",color:"#F59E0B",niche:"Psicología & Decisiones",cpm:"$8-12"},
+  {key:"mente_sem_filtro",name:"Mente Sem Filtro",flag:"🇧🇷",lang:"PT",color:"#10B981",niche:"Psicologia & Decisões",cpm:"$6-10"},
+];
+const INTL_NICHES=[
+  {name:"Psicologia das Decisões",keyword:"psychology decision making behavior",cpm:"$15-25"},
+  {name:"Crimes Corporativos",keyword:"corporate crime collapse company scandal",cpm:"$18-30"},
+  {name:"Mistérios Históricos",keyword:"historical mysteries hidden history science",cpm:"$12-20"},
+];
 const toLocalDate=d=>{const dt=new Date(d);return dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");};
 const today=()=>toLocalDate(new Date());
 const thisMonth=()=>new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0");
@@ -146,28 +156,16 @@ export default function DarkApp(){
   const [wRefLoading,setWRefLoading]=useState(null);
   const [cmdK,setCmdK]=useState(false);
   const [cmdKQuery,setCmdKQuery]=useState("");
+  const [intlSection,setIntlSection]=useState("roteiros");
+  const [intlInput,setIntlInput]=useState("");
+  const [activeChannel,setActiveChannel]=useState("decoded_minds");
+  const [intlRefVideos,setIntlRefVideos]=useState({});
+  const [intlRefLoading,setIntlRefLoading]=useState(null);
   const trendingAutoRef=useRef(null);
 
   const flash=()=>{setSaved(true);setTimeout(()=>setSaved(false),2000);};
   const flashError=m=>{setErrorMsg(m);setTimeout(()=>setErrorMsg(""),4000);};
   const triggerConfetti=()=>{setConfetti(true);setTimeout(()=>setConfetti(false),2500);};
-  const playTimerSound=(type="work")=>{
-    try{
-      const ctx=new (window.AudioContext||window.webkitAudioContext)();
-      const notes=type==="work"?[523,659,784,1047]:[784,659,523];
-      notes.forEach((freq,i)=>{
-        const osc=ctx.createOscillator();
-        const gain=ctx.createGain();
-        osc.connect(gain);gain.connect(ctx.destination);
-        osc.frequency.value=freq;
-        osc.type="sine";
-        gain.gain.setValueAtTime(0.3,ctx.currentTime+i*0.18);
-        gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+i*0.18+0.3);
-        osc.start(ctx.currentTime+i*0.18);
-        osc.stop(ctx.currentTime+i*0.18+0.3);
-      });
-    }catch(e){}
-  };
 
   useEffect(()=>{
     supabase.auth.getSession().then(({data:{session}})=>{setUser(session?.user??null);setCheckingAuth(false);});
@@ -253,13 +251,11 @@ export default function DarkApp(){
   const handleTimerEnd=async()=>{
     if(timerMode==="work"){
       triggerConfetti();
-      playTimerSound("work");
       const ns={...userStats,xp:(userStats.xp||0)+25,pomodoros_completed:(userStats.pomodoros_completed||0)+1};
       setUserStats(ns);if(userStats.id)await supabase.from("user_stats").update(ns).eq("id",userStats.id);
       setTimerMode("break");setTimerSeconds(5*60);
       try{localStorage.setItem("dark_timer_mode","break");localStorage.setItem("dark_timer_seconds",5*60);}catch{}
     } else {
-      playTimerSound("break");
       setTimerMode("work");setTimerSeconds(25*60);
       try{localStorage.setItem("dark_timer_mode","work");localStorage.setItem("dark_timer_seconds",25*60);}catch{}
     }
@@ -311,17 +307,14 @@ export default function DarkApp(){
     if(data){setVideos(prev=>prev.map(v=>v.id===data.id?data:v));setVideoDetailModal(data);flash();}
   };
   const createVideo=async initial=>{
-    const dc=clients.find(c=>c.name==="Canais Dark")?.id;
-    const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:initial?.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:initial?.client_id||dc,...(initial||{})}).select().single();
+    const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:initial?.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:initial?.client_id||darkClientId,...(initial||{})}).select().single();
     if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);}
   };
   const deleteVideo=async id=>{if(!confirm("Excluir?"))return;await supabase.from("videos").delete().eq("id",id);setVideos(prev=>prev.filter(v=>v.id!==id));setVideoDetailModal(null);};
   const moveVideo=async(id,status)=>{const{data}=await supabase.from("videos").update({status}).eq("id",id).select().single();if(data)setVideos(prev=>prev.map(v=>v.id===data.id?data:v));};
   const useVideoAsBase=async(rv,niche)=>{
     const isWalde=niche==="Sr. Waldemar";
-    const wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;
-    const dc=clients.find(c=>c.name==="Canais Dark")?.id;
-    const{data}=await supabase.from("videos").insert({title:rv.title,niche:isWalde?"Sr. Waldemar":niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:isWalde?wc:dc,ref_titulo:rv.title,ref_thumb:rv.thumb||"",ref_url:rv.url||"",ref_canal:rv.channel||"",ref_views:rv.views||0}).select().single();
+    const{data}=await supabase.from("videos").insert({title:rv.title,niche:isWalde?"Sr. Waldemar":niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:isWalde?waldeClientId:darkClientId,ref_titulo:rv.title,ref_thumb:rv.thumb||"",ref_url:rv.url||"",ref_canal:rv.channel||"",ref_views:rv.views||0}).select().single();
     if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);setUseAsBaseModal(null);setActiveTab(isWalde?5:4);flash();}
   };
   const openScript=v=>{setScriptData({...v});const takes=v.script?JSON.parse(v.script||"[]"):[];setScriptTakes(takes.length?takes:[{id:Date.now(),section:"GANCHO",startTime:"00:00",endTime:"00:07",angle:"A",narration:"",visual:"",prompt:""}]);setScriptModal(true);};
@@ -367,12 +360,12 @@ export default function DarkApp(){
   };
   const saveIdea=async(title,opts={})=>{const{data}=await supabase.from("ideas").insert({title,source:opts.source||"quick",niche:opts.niche||"",description:opts.description||""}).select().single();if(data)setIdeas(prev=>[data,...prev]);flash();};
   const saveQuickIdea=async title=>saveIdea(title);
-  const saveWaldeIdea=async(title,category)=>{const wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;return saveIdea(title,{source:"waldemar",niche:"Sr. Waldemar",client_id:wc,description:category||""}); };
-  const createWaldeVideo=async initial=>{const wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:"Sr. Waldemar",status:"Roteiro",client_id:wc,...(initial||{})}).select().single();if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);}};
-  const useWaldeIdeaAsVideo=async idea=>{const wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;const{data}=await supabase.from("videos").insert({title:idea.title,niche:"Sr. Waldemar",status:"Roteiro",client_id:wc,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);setActiveTab(5);setWSection("pipeline");flash();}};
+  const saveWaldeIdea=async(title,category)=>saveIdea(title,{source:"waldemar",niche:"Sr. Waldemar",client_id:waldeClientId,description:category||""});
+  const createWaldeVideo=async initial=>{const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:"Sr. Waldemar",status:"Roteiro",client_id:waldeClientId,...(initial||{})}).select().single();if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);}};
+  const useWaldeIdeaAsVideo=async idea=>{const{data}=await supabase.from("videos").insert({title:idea.title,niche:"Sr. Waldemar",status:"Roteiro",client_id:waldeClientId,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
   const deleteIdea=async id=>{await supabase.from("ideas").delete().eq("id",id);setIdeas(prev=>prev.filter(i=>i.id!==id));};
   const restoreIdea=async id=>{const{data}=await supabase.from("ideas").update({used:false}).eq("id",id).select().single();if(data)setIdeas(prev=>prev.map(i=>i.id===data.id?data:i));flash();};
-  const useIdeaAsVideo=async idea=>{const dc=clients.find(c=>c.name==="Canais Dark")?.id;const{data}=await supabase.from("videos").insert({title:idea.title,niche:idea.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:dc,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
+  const useIdeaAsVideo=async idea=>{const{data}=await supabase.from("videos").insert({title:idea.title,niche:idea.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:darkClientId,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
   const saveRefChannel=async()=>{
     if(!refChannelEdit?.name?.trim())return;
     if(refChannelEdit.id){const r=await supabase.from("ref_channels").update(refChannelEdit).eq("id",refChannelEdit.id).select().single();if(r.data)setRefChannels(prev=>prev.map(c=>c.id===r.data.id?r.data:c));}
@@ -403,8 +396,8 @@ export default function DarkApp(){
       const d=await r.json();
       const ch=d.items?.[0];
       if(ch){setFn(prev=>({...prev,channel_id:ch.id,name:prev.name||ch.snippet?.title||""}));}
-      else{flashError("Canal não encontrado. Verifique a URL.");}
-    }catch(e){flashError("Erro ao buscar canal.");}
+      else{alert("Canal não encontrado. Verifique a URL.");}
+    }catch(e){alert("Erro ao buscar canal.");}
   };
   const loadTrendingRefChannels=async()=>{const{data}=await supabase.from("trending_ref_channels").select("*").order("name");if(data)setTrendingRefChannels(data);};
   useEffect(()=>{if(user)loadTrendingRefChannels();},[user]);// eslint-disable-line
@@ -458,6 +451,41 @@ export default function DarkApp(){
   };
   const toggleNicheActive=async n=>{const{data}=await supabase.from("niches").update({active:!n.active}).eq("id",n.id).select().single();if(data)setNiches(prev=>prev.map(x=>x.id===data.id?data:x));};
 
+  const intlClientId=(ch)=>clients.find(c=>c.name===INTL_CHANNELS.find(x=>x.key===ch)?.name)?.id;
+  const getIntlVideos=(ch)=>videos.filter(v=>v.client_id===intlClientId(ch));
+  const getIntlIdeas=(ch)=>ideas.filter(i=>!i.used&&(i.client_id===intlClientId(ch)||i.niche===ch));
+  const createIntlVideo=async(ch)=>{
+    const cId=intlClientId(ch);
+    const chInfo=INTL_CHANNELS.find(x=>x.key===ch);
+    const{data}=await supabase.from("videos").insert({title:"Novo Vídeo",niche:chInfo?.niche||ch,status:"Roteiro",client_id:cId}).select().single();
+    if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);}
+  };
+  const saveIntlIdea=async(title,ch)=>{
+    const cId=intlClientId(ch);
+    const{data}=await supabase.from("ideas").insert({title,source:"intl",niche:ch,client_id:cId}).select().single();
+    if(data)setIdeas(prev=>[data,...prev]);flash();
+  };
+  const useIntlIdeaAsVideo=async(idea,ch)=>{
+    const cId=intlClientId(ch);
+    const chInfo=INTL_CHANNELS.find(x=>x.key===ch);
+    const{data}=await supabase.from("videos").insert({title:idea.title,niche:chInfo?.niche||ch,status:"Roteiro",client_id:cId,notes:idea.description||""}).select().single();
+    if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}
+  };
+  const fetchIntlRefVideos=async(niche)=>{
+    const apiKey=process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
+    if(!apiKey||intlRefVideos[niche.name])return;
+    setIntlRefLoading(niche.name);
+    try{
+      const r=await fetch("https://www.googleapis.com/youtube/v3/search?part=snippet&q="+encodeURIComponent(niche.keyword)+"&type=video&order=viewCount&maxResults=8&key="+apiKey);
+      const d=await r.json();
+      const ids=(d.items||[]).map(i=>i.id?.videoId).filter(Boolean).join(",");
+      if(!ids){setIntlRefLoading(null);return;}
+      const s=await fetch("https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id="+ids+"&key="+apiKey);
+      const sd=await s.json();
+      setIntlRefVideos(prev=>({...prev,[niche.name]:(sd.items||[]).map(v=>({id:v.id,title:v.snippet?.title,channel:v.snippet?.channelTitle,thumb:v.snippet?.thumbnails?.medium?.url,views:parseInt(v.statistics?.viewCount||0),url:"https://youtube.com/watch?v="+v.id})).sort((a,b)=>b.views-a.views)}));
+    }catch(e){flashError("Erro ao buscar referências");}
+    setIntlRefLoading(null);
+  };
   const fetchTrending=useCallback(async()=>{
     const apiKey=process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
     if(!apiKey)return;
@@ -492,8 +520,6 @@ export default function DarkApp(){
     setChannelLoading(null);
   };
 
-  const _waldeId=clients.find(c=>c.name==="Sr. Waldemar")?.id;
-  const _darkId=clients.find(c=>c.name==="Canais Dark")?.id;
   const pendingTasks=tasks.filter(t=>!t.done).sort((a,b)=>(a.deadline||"9999").localeCompare(b.deadline||"9999"));
   const activeGoals=goals.filter(g=>!g.completed);
   const overdueLeads=leads.filter(l=>!l.converted&&l.follow_up_date&&deadlineDiff(l.follow_up_date)<=0);
@@ -528,13 +554,16 @@ export default function DarkApp(){
   // ─── RENDER ───────────────────────────────────────────────
   const urgentToday=pendingTasks.filter(t=>t.urgency==="hot"||deadlineDiff(t.deadline)<=0);
   const nextTask=pendingTasks[0];
-  const stuckVideos=videos.filter(v=>v.status!=="Postagem"&&v.client_id===_darkId).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).slice(0,3);
+  const stuckVideos=videos.filter(v=>v.status!=="Postagem").sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).slice(0,3);
   const topGoals=activeGoals.slice(0,3).map(g=>({...g,plan:calcGoalPlan(g)}));
   const weekTasks=pendingTasks.filter(t=>t.deadline&&deadlineDiff(t.deadline)<=7&&deadlineDiff(t.deadline)>0);
   const thisMonthKey=thisMonth();
-  const wVideos=videos.filter(v=>_waldeId?v.client_id===_waldeId:v.niche==="Sr. Waldemar");
-  const wIdeas=ideas.filter(i=>_waldeId?i.client_id===_waldeId:(i.niche==="Sr. Waldemar"||i.source==="waldemar"));
-  const darkIdeas=ideas.filter(i=>!i.used&&i.niche!=="Sr. Waldemar"&&i.source!=="waldemar"&&(!_waldeId||i.client_id!==_waldeId));
+  const waldeClientId=clients.find(c=>c.name==="Sr. Waldemar")?.id;
+  const darkClientId=clients.find(c=>c.name==="Canais Dark")?.id;
+  const wVideos=videos.filter(v=>v.client_id===waldeClientId);
+  const darkVideos=videos.filter(v=>v.client_id===darkClientId);
+  const wIdeas=ideas.filter(i=>i.client_id===waldeClientId||i.niche==="Sr. Waldemar"||i.source==="waldemar");
+  const darkIdeas=ideas.filter(i=>!i.used&&i.client_id!==waldeClientId&&i.source!=="waldemar"&&i.niche!=="Sr. Waldemar");
 
   return (
     <div style={{background:BG,minHeight:"100vh",color:TEXT}}>
@@ -565,7 +594,7 @@ export default function DarkApp(){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22}}>
               <div>
                 <div style={{fontFamily:"'Bebas Neue'",fontSize:30,letterSpacing:1}}>{greeting()} <span style={{color:ACCENT}}>BERNARDO.</span></div>
-                <div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED,marginTop:4}}>{new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long"})} · {pendingTasks.length} pendentes{overdueLeads.length>0&&<span style={{color:RED,marginLeft:8}}>· {overdueLeads.length} leads atrasados</span>}</div>
+                <div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED,marginTop:4}}>{new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long"})} · {pendingTasks.length} pendentes</div>
               </div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
@@ -676,22 +705,6 @@ export default function DarkApp(){
                     );
                   })}
                 </div>
-              </div>
-            )}
-            {vencendoBreve.length>0&&(
-              <div style={{...card,marginTop:0,borderColor:RED+"44",background:RED+"06"}}>
-                <div style={{fontFamily:"'DM Sans'",fontSize:10,color:RED,letterSpacing:1,textTransform:"uppercase",marginBottom:10,fontWeight:600}}>⚠ NFs VENCENDO EM BREVE — {vencendoBreve.length}</div>
-                {vencendoBreve.map(i=>(
-                  <div key={i.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 5px",borderBottom:"1px solid "+BOR}}>
-                    <div style={{flex:1}}>
-                      <div style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:500}}>{i.description||"Sem descrição"}</div>
-                      <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{getClientName(i.client_id)}</div>
-                    </div>
-                    <span style={{fontFamily:"'IBM Plex Mono'",fontSize:11,color:ACCENT,fontWeight:600}}>{fmtCurrency(i.amount)}</span>
-                    <span style={{background:deadlineColor(i.due_date)+"20",color:deadlineColor(i.due_date),borderRadius:4,padding:"2px 6px",fontSize:10,fontWeight:600}}>{deadlineLabel(i.due_date)}</span>
-                    <button onClick={()=>markInvoicePaid(i.id)} style={{...btnGhost,padding:"2px 8px",fontSize:10,color:GREEN,borderColor:GREEN+"33"}}>✓ pago</button>
-                  </div>
-                ))}
               </div>
             )}
             {(trendingData.br.length>0||trendingData.global.length>0)&&(
@@ -1175,13 +1188,7 @@ export default function DarkApp(){
                         <div style={{padding:6,display:"flex",flexDirection:"column",gap:5}}>
                           {colVids.map(v=>(
                             <div key={v.id} draggable onDragStart={e=>e.dataTransfer.setData("vid",v.id)} onClick={()=>setVideoDetailModal({...v})} style={{background:CARD,border:"1px solid "+BOR,borderRadius:7,padding:"9px 10px",cursor:"pointer"}} className="hc">
-                              {(v.ref_thumb||v.minha_thumbnail)&&<img src={v.ref_thumb||v.minha_thumbnail} alt="" style={{width:"100%",height:52,objectFit:"cover",borderRadius:3,marginBottom:5}}/>}
                               <div style={{fontFamily:"'DM Sans'",fontSize:11,fontWeight:600,lineHeight:1.3,marginBottom:4}}>{v.meu_titulo||v.title}</div>
-                              <div style={{display:"flex",gap:3,flexWrap:"wrap",marginBottom:2}}>
-                                <span style={{background:ACCENT+"15",color:ACCENT,borderRadius:3,padding:"1px 5px",fontSize:9}}>Sr.</span>
-                                {v.ref_url&&<span style={{background:BLUE+"15",color:BLUE,borderRadius:3,padding:"1px 5px",fontSize:9}}>📎</span>}
-                                {v.short_script&&<span style={{background:PURP+"15",color:PURP,borderRadius:3,padding:"1px 5px",fontSize:9}}>📱</span>}
-                              </div>
                               {v.publish_date&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>📅 {fmtDate(v.publish_date)}</div>}
                             </div>
                           ))}
@@ -1240,6 +1247,217 @@ export default function DarkApp(){
         )}
 
         {activeTab===6&&(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
+              <div>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:2}}>🌍 INT'L CHANNELS</div>
+                <div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED}}>1 roteiro → 3 idiomas → 3 canais → 3x a receita</div>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                {["roteiros","ideias","referencias","stats"].map(s=>(
+                  <button key={s} onClick={()=>setIntlSection(s)} style={{...btnGhost,color:intlSection===s?ACCENT:MUTED,borderColor:intlSection===s?ACCENT+"44":BOR,fontSize:12}}>
+                    {s==="roteiros"?"🎬 Pipeline":s==="ideias"?"💡 Ideias":s==="referencias"?"📺 Referências":"📊 Stats"}
+                  </button>
+                ))}
+                <button onClick={()=>createIntlVideo(activeChannel)} style={btnGold}>+ NOVO VÍDEO</button>
+              </div>
+            </div>
+
+            {/* Channel selector */}
+            <div style={{display:"flex",gap:10,marginBottom:20}}>
+              {INTL_CHANNELS.map(ch=>(
+                <button key={ch.key} onClick={()=>setActiveChannel(ch.key)} style={{...card,marginBottom:0,flex:1,cursor:"pointer",border:"2px solid "+(activeChannel===ch.key?ch.color:BOR),background:activeChannel===ch.key?ch.color+"10":CARD,transition:"all .15s",padding:"14px 18px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                    <span style={{fontSize:20}}>{ch.flag}</span>
+                    <div>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:1,color:activeChannel===ch.key?ch.color:TEXT}}>{ch.name}</div>
+                      <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED}}>{ch.lang} · CPM {ch.cpm}</div>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:10}}>
+                    <div style={{background:BG3,borderRadius:6,padding:"5px 8px",flex:1,textAlign:"center"}}>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:ch.color}}>{getIntlVideos(ch.key).length}</div>
+                      <div style={{fontFamily:"'DM Sans'",fontSize:9,color:MUTED}}>vídeos</div>
+                    </div>
+                    <div style={{background:BG3,borderRadius:6,padding:"5px 8px",flex:1,textAlign:"center"}}>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:ch.color}}>{getIntlVideos(ch.key).filter(v=>v.status==="Postagem").length}</div>
+                      <div style={{fontFamily:"'DM Sans'",fontSize:9,color:MUTED}}>publicados</div>
+                    </div>
+                    <div style={{background:BG3,borderRadius:6,padding:"5px 8px",flex:1,textAlign:"center"}}>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:ch.color}}>{getIntlIdeas(ch.key).length}</div>
+                      <div style={{fontFamily:"'DM Sans'",fontSize:9,color:MUTED}}>ideias</div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {intlSection==="roteiros"&&(
+              <div style={{overflowX:"auto",paddingBottom:8}}>
+                <div style={{display:"flex",gap:10,minWidth:"max-content"}}>
+                  {PIPELINE.map(status=>{
+                    const ch=INTL_CHANNELS.find(x=>x.key===activeChannel);
+                    const colVids=getIntlVideos(activeChannel).filter(v=>v.status===status);
+                    const color=PIPELINE_COLORS[status];
+                    return(
+                      <div key={status} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const id=e.dataTransfer.getData("vid");if(id)moveVideo(id,status);}} style={{width:220,flexShrink:0,background:BG3,border:"1px solid "+BOR,borderRadius:10,overflow:"hidden",minHeight:240}}>
+                        <div style={{padding:"9px 10px 7px",borderBottom:"2px solid "+color,background:color+"10"}}>
+                          <div style={{fontFamily:"'Bebas Neue'",fontSize:13,letterSpacing:1,color}}>{status}</div>
+                          <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED}}>{colVids.length}</div>
+                        </div>
+                        <div style={{padding:6,display:"flex",flexDirection:"column",gap:5}}>
+                          {colVids.map(v=>(
+                            <div key={v.id} draggable onDragStart={e=>e.dataTransfer.setData("vid",v.id)} onClick={()=>setVideoDetailModal({...v})} style={{background:CARD,border:"1px solid "+(v.ref_url?BLUE:BOR),borderRadius:7,padding:"9px 10px",cursor:"pointer"}} className="hc">
+                              {(v.ref_thumb||v.minha_thumbnail)&&<img src={v.ref_thumb||v.minha_thumbnail} alt="" style={{width:"100%",height:52,objectFit:"cover",borderRadius:3,marginBottom:5}}/>}
+                              <div style={{fontFamily:"'DM Sans'",fontSize:11,fontWeight:600,lineHeight:1.3,marginBottom:4}}>{v.meu_titulo||v.title}</div>
+                              <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+                                <span style={{background:(ch?.color||ACCENT)+"20",color:ch?.color||ACCENT,borderRadius:3,padding:"1px 5px",fontSize:9}}>{ch?.flag} {ch?.lang}</span>
+                                {v.ref_url&&<span style={{background:BLUE+"15",color:BLUE,borderRadius:3,padding:"1px 5px",fontSize:9}}>📎</span>}
+                              </div>
+                              {v.publish_date&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED,marginTop:3}}>📅 {fmtDate(v.publish_date)}</div>}
+                            </div>
+                          ))}
+                          {colVids.length===0&&<div style={{color:HINT,fontSize:11,textAlign:"center",padding:14}}>Arraste aqui</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {intlSection==="ideias"&&(
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
+                <div style={card}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                    <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:2}}>💡 BANCO DE IDEIAS — {INTL_CHANNELS.find(x=>x.key===activeChannel)?.flag} {INTL_CHANNELS.find(x=>x.key===activeChannel)?.name}</div>
+                    <span style={{fontFamily:"'IBM Plex Mono'",fontSize:11,color:MUTED}}>{getIntlIdeas(activeChannel).length} ideias</span>
+                  </div>
+                  <div style={{display:"flex",gap:8,marginBottom:14}}>
+                    <input value={intlInput} onChange={e=>setIntlInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&intlInput.trim()){saveIntlIdea(intlInput.trim(),activeChannel);setIntlInput("");}}} placeholder={"Nova ideia para "+INTL_CHANNELS.find(x=>x.key===activeChannel)?.name+"..."} style={{...inp,flex:1}}/>
+                    <button onClick={()=>{if(intlInput.trim()){saveIntlIdea(intlInput.trim(),activeChannel);setIntlInput("");}}} style={btnGold}>+</button>
+                  </div>
+                  {getIntlIdeas(activeChannel).length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:20}}>Nenhuma ideia ainda.</div>}
+                  {getIntlIdeas(activeChannel).map(i=>(
+                    <div key={i.id} className="hr" style={{display:"flex",alignItems:"center",gap:8,padding:"8px 5px",borderBottom:"1px solid "+BOR,borderRadius:4}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.title}</div>
+                      </div>
+                      <button onClick={()=>useIntlIdeaAsVideo(i,activeChannel)} style={{...btnGhost,padding:"2px 7px",fontSize:10,color:GREEN,borderColor:GREEN+"33",flexShrink:0}}>usar →</button>
+                      <button onClick={()=>deleteIdea(i.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:12}}>✕</button>
+                    </div>
+                  ))}
+                </div>
+                <div style={card}>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:2,marginBottom:12}}>💡 COPIAR IDEIA PARA OUTROS CANAIS</div>
+                  <div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED,marginBottom:12,lineHeight:1.6}}>
+                    Selecione uma ideia abaixo e ela será adaptada para os 3 canais automaticamente.
+                  </div>
+                  {getIntlIdeas(activeChannel).slice(0,5).map(i=>(
+                    <div key={i.id} style={{background:BG3,borderRadius:7,padding:"10px 12px",marginBottom:8}}>
+                      <div style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:500,marginBottom:8}}>{i.title}</div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                        {INTL_CHANNELS.filter(ch=>ch.key!==activeChannel).map(ch=>(
+                          <button key={ch.key} onClick={()=>saveIntlIdea(i.title,ch.key)} style={{...btnGhost,fontSize:10,padding:"3px 9px",color:ch.color,borderColor:ch.color+"44"}}>
+                            {ch.flag} → {ch.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {getIntlIdeas(activeChannel).length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED}}>Capture ideias no banco ao lado.</div>}
+                </div>
+              </div>
+            )}
+
+            {intlSection==="referencias"&&(
+              <div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>📺 REFERÊNCIAS — VERDADES QUE TE ESCONDEM</div>
+                  <button onClick={()=>INTL_NICHES.forEach(n=>fetchIntlRefVideos(n))} style={{...btnGold,fontSize:12}}>🔄 BUSCAR TODOS</button>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(380px,1fr))",gap:14}}>
+                  {INTL_NICHES.map(niche=>(
+                    <div key={niche.name} style={{...card,marginBottom:0,borderLeft:"3px solid "+ACCENT}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                        <div>
+                          <div style={{fontFamily:"'Bebas Neue'",fontSize:15,letterSpacing:1,color:ACCENT}}>{niche.name}</div>
+                          <div style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:MUTED}}>CPM EN: {niche.cpm}</div>
+                        </div>
+                        <button onClick={()=>fetchIntlRefVideos(niche)} disabled={intlRefLoading===niche.name} style={{...btnGhost,fontSize:10,padding:"3px 10px",color:ACCENT,borderColor:ACCENT+"44",opacity:intlRefLoading===niche.name?.5:1}}>{intlRefLoading===niche.name?"...":intlRefVideos[niche.name]?"✓ "+intlRefVideos[niche.name].length:"▶ Buscar"}</button>
+                      </div>
+                      {intlRefVideos[niche.name]?.map((v,i)=>(
+                        <div key={v.id} style={{display:"flex",gap:8,padding:"6px 0",borderBottom:"1px solid "+BOR,alignItems:"center"}}>
+                          <span style={{fontFamily:"'Bebas Neue'",fontSize:14,color:HINT,width:18,flexShrink:0}}>{i+1}</span>
+                          {v.thumb&&<img src={v.thumb} alt="" style={{width:52,height:37,borderRadius:3,objectFit:"cover",flexShrink:0}}/>}
+                          <div style={{flex:1,minWidth:0}}>
+                            <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:11,fontWeight:500,color:TEXT,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.title}</a>
+                            <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.channel} · {v.views?.toLocaleString("pt-BR")} views</div>
+                          </div>
+                          <div style={{display:"flex",gap:3,flexShrink:0}}>
+                            <button onClick={()=>saveIntlIdea(v.title,activeChannel)} style={{...btnGhost,padding:"1px 5px",fontSize:9,color:GREEN,borderColor:GREEN+"33"}}>+ideia</button>
+                            <button onClick={()=>setUseAsBaseModal({...v,niche:INTL_CHANNELS.find(x=>x.key===activeChannel)?.niche})} style={{...btnGhost,padding:"1px 5px",fontSize:9,color:ACCENT,borderColor:ACCENT+"33"}}>base</button>
+                          </div>
+                        </div>
+                      ))}
+                      {!intlRefVideos[niche.name]&&<div style={{fontFamily:"'DM Sans'",fontSize:11,color:HINT,padding:"8px 0"}}>Clique em Buscar para carregar.</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {intlSection==="stats"&&(
+              <div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:20}}>
+                  {INTL_CHANNELS.map(ch=>{
+                    const chVids=getIntlVideos(ch.key);
+                    const published=chVids.filter(v=>v.status==="Postagem").length;
+                    const inProd=chVids.filter(v=>v.status!=="Postagem").length;
+                    const chIdeas=ideas.filter(i=>i.client_id===intlClientId(ch.key)||i.niche===ch.key);
+                    return(
+                      <div key={ch.key} style={{...card,marginBottom:0,borderTop:"3px solid "+ch.color}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+                          <span style={{fontSize:22}}>{ch.flag}</span>
+                          <div>
+                            <div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:1,color:ch.color}}>{ch.name}</div>
+                            <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{ch.lang} · CPM {ch.cpm}</div>
+                          </div>
+                        </div>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                          {[{l:"Total vídeos",v:chVids.length},{l:"Publicados",v:published},{l:"Em produção",v:inProd},{l:"Ideias",v:chIdeas.length}].map(s=>(
+                            <div key={s.l} style={{background:BG3,borderRadius:7,padding:"8px 10px"}}>
+                              <div style={{fontFamily:"'DM Sans'",fontSize:9,color:MUTED,textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>{s.l}</div>
+                              <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:ch.color}}>{s.v}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{...card}}>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:2,marginBottom:14}}>📊 VISÃO CONSOLIDADA — 3 CANAIS</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+                    {[
+                      {l:"Total de vídeos",v:INTL_CHANNELS.reduce((s,ch)=>s+getIntlVideos(ch.key).length,0),c:ACCENT},
+                      {l:"Publicados",v:INTL_CHANNELS.reduce((s,ch)=>s+getIntlVideos(ch.key).filter(v=>v.status==="Postagem").length,0),c:GREEN},
+                      {l:"Em produção",v:INTL_CHANNELS.reduce((s,ch)=>s+getIntlVideos(ch.key).filter(v=>v.status!=="Postagem").length,0),c:BLUE},
+                      {l:"Total de ideias",v:INTL_CHANNELS.reduce((s,ch)=>s+getIntlIdeas(ch.key).length,0),c:PURP},
+                    ].map(s=>(
+                      <div key={s.l} style={{background:BG3,borderRadius:8,padding:"12px 14px"}}>
+                        <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>{s.l}</div>
+                        <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:s.c}}>{s.v}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab===7&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:2}}>CLIENTES</div>
@@ -1390,7 +1608,7 @@ export default function DarkApp(){
           </div>
         )}
 
-        {activeTab===7&&(
+        {activeTab===8&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:2}}>FINANÇAS</div>
@@ -1500,7 +1718,7 @@ export default function DarkApp(){
           </div>
         )}
 
-        {activeTab===8&&(
+        {activeTab===9&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:2}}>BIBLIOTECA</div>
@@ -1535,7 +1753,7 @@ export default function DarkApp(){
           </div>
         )}
 
-        {activeTab===9&&(
+        {activeTab===10&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div>
@@ -1658,7 +1876,7 @@ export default function DarkApp(){
 
       <button onClick={()=>setQuickCapture(true)} style={{position:"fixed",bottom:26,right:26,width:50,height:50,borderRadius:"50%",background:ACCENT,color:"#111",border:"none",cursor:"pointer",fontSize:22,fontWeight:700,boxShadow:"0 4px 18px "+ACCENT+"50",zIndex:100}} onMouseEnter={e=>e.currentTarget.style.transform="scale(1.1)"} onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>+</button>
 
-      {quickCapture&&<div onClick={e=>e.target===e.currentTarget&&setQuickCapture(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:400,padding:26}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2,marginBottom:14}}>CAPTURA RÁPIDA</div><textarea value={quickText} onChange={e=>setQuickText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();document.getElementById("quickSaveBtn")?.click();}}} placeholder="Ideia, tarefa, pensamento..." style={{...inp,minHeight:70,marginBottom:12}} autoFocus/><div style={{display:"flex",gap:7,marginBottom:14}}>{[["idea","💡 Ideia"],["task","✓ Tarefa"]].map(([v,l])=><button key={v} onClick={()=>setQuickDest(v)} style={{...btnGhost,flex:1,color:quickDest===v?ACCENT:MUTED,borderColor:quickDest===v?ACCENT+"44":BOR,background:quickDest===v?ACCENT+"10":undefined}}>{l}</button>)}</div><div style={{display:"flex",gap:9}}><button onClick={()=>setQuickCapture(false)} style={btnGhost}>Cancelar</button><button id="quickSaveBtn" onClick={async()=>{if(!quickText.trim())return;if(quickDest==="idea"){const{data}=await supabase.from("ideas").insert({title:quickText.trim(),source:"quick"}).select().single();if(data)setIdeas(prev=>[data,...prev]);}else{const{data}=await supabase.from("tasks").insert({title:quickText.trim(),urgency:"normal",estimated_hours:1}).select().single();if(data)setTasks(prev=>[data,...prev]);}setQuickText("");setQuickCapture(false);flash();}} style={{...btnGold,flex:1}}>SALVAR</button></div></div></div>}
+      {quickCapture&&<div onClick={e=>e.target===e.currentTarget&&setQuickCapture(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:400,padding:26}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2,marginBottom:14}}>CAPTURA RÁPIDA</div><textarea value={quickText} onChange={e=>setQuickText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&saveQuickCapture&&null} placeholder="Ideia, tarefa, pensamento..." style={{...inp,minHeight:70,marginBottom:12}} autoFocus/><div style={{display:"flex",gap:7,marginBottom:14}}>{[["idea","💡 Ideia"],["task","✓ Tarefa"]].map(([v,l])=><button key={v} onClick={()=>setQuickDest(v)} style={{...btnGhost,flex:1,color:quickDest===v?ACCENT:MUTED,borderColor:quickDest===v?ACCENT+"44":BOR,background:quickDest===v?ACCENT+"10":undefined}}>{l}</button>)}</div><div style={{display:"flex",gap:9}}><button onClick={()=>setQuickCapture(false)} style={btnGhost}>Cancelar</button><button onClick={async()=>{if(!quickText.trim())return;if(quickDest==="idea"){const{data}=await supabase.from("ideas").insert({title:quickText.trim(),source:"quick"}).select().single();if(data)setIdeas(prev=>[data,...prev]);}else{const{data}=await supabase.from("tasks").insert({title:quickText.trim(),urgency:"normal",estimated_hours:1}).select().single();if(data)setTasks(prev=>[data,...prev]);}setQuickText("");setQuickCapture(false);flash();}} style={{...btnGold,flex:1}}>SALVAR</button></div></div></div>}
 
       {taskModal&&taskEdit&&<div onClick={e=>e.target===e.currentTarget&&(setTaskModal(false),setTaskEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:520,padding:26,maxHeight:"90vh",overflowY:"auto"}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>{taskEdit.id?"EDITAR TAREFA":"NOVA TAREFA"}</div><button onClick={()=>{setTaskModal(false);setTaskEdit(null);}} style={btnGhost}>✕</button></div><div style={{marginBottom:12}}><span style={lbl}>Título</span><input value={taskEdit.title||""} onChange={e=>setTaskEdit({...taskEdit,title:e.target.value})} style={inp}/></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><div style={{marginBottom:12}}><span style={lbl}>Cliente</span><select value={taskEdit.client_id||""} onChange={e=>setTaskEdit({...taskEdit,client_id:e.target.value})} style={inp}><option value="">Sem cliente</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div><div style={{marginBottom:12}}><span style={lbl}>Tipo</span><select value={taskEdit.type||"Roteiro"} onChange={e=>setTaskEdit({...taskEdit,type:e.target.value})} style={inp}>{TASK_TYPES.map(t=><option key={t}>{t}</option>)}</select></div><div style={{marginBottom:12}}><span style={lbl}>Urgência</span><select value={taskEdit.urgency||"normal"} onChange={e=>setTaskEdit({...taskEdit,urgency:e.target.value})} style={inp}><option value="normal">Normal</option><option value="warn">Atenção</option><option value="hot">Urgente 🔥</option></select></div><div style={{marginBottom:12}}><span style={lbl}>Horas est.</span><input type="number" value={taskEdit.estimated_hours||1} step="0.5" min="0.5" onChange={e=>setTaskEdit({...taskEdit,estimated_hours:parseFloat(e.target.value)||1})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Data</span><input type="date" value={taskEdit.deadline||""} onChange={e=>setTaskEdit({...taskEdit,deadline:e.target.value})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Horário</span><input type="time" value={taskEdit.task_time||""} onChange={e=>setTaskEdit({...taskEdit,task_time:e.target.value})} style={inp}/></div></div><div style={{marginBottom:14}}><span style={lbl}>Notas</span><textarea value={taskEdit.notes||""} onChange={e=>setTaskEdit({...taskEdit,notes:e.target.value})} style={{...inp,minHeight:55}}/></div><div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setTaskModal(false);setTaskEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveTask} style={btnGold}>SALVAR</button></div></div></div>}
 
@@ -1692,7 +1910,7 @@ export default function DarkApp(){
               {cmdKQuery.trim().length<2?(
                 <div>
                   <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",padding:"8px 10px 4px"}}>Atalhos rápidos</div>
-                  {[{label:"Dashboard",icon:"🏠",tab:0},{label:"Focus OS",icon:"⚡",tab:1},{label:"Metas",icon:"🎯",tab:2},{label:"Canais Dark",icon:"🎬",tab:4},{label:"Sr. Waldemar",icon:"⭐",tab:5},{label:"Clientes",icon:"◈",tab:6},{label:"Finanças",icon:"💰",tab:7},{label:"Trending",icon:"🔥",tab:9}].map(item=>(
+                  {[{label:"Dashboard",icon:"🏠",tab:0},{label:"Focus OS",icon:"⚡",tab:1},{label:"Metas",icon:"🎯",tab:2},{label:"Canais Dark",icon:"🎬",tab:4},{label:"Sr. Waldemar",icon:"⭐",tab:5},{label:"Int'l Channels",icon:"🌍",tab:6},{label:"Clientes",icon:"◈",tab:7},{label:"Finanças",icon:"💰",tab:8},{label:"Trending",icon:"🔥",tab:10}].map(item=>(
                     <div key={item.tab} onClick={()=>{setActiveTab(item.tab);setCmdK(false);}} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",borderRadius:7,cursor:"pointer",fontFamily:"'DM Sans'",fontSize:13}} className="hr">
                       <span style={{fontSize:16}}>{item.icon}</span><span>{item.label}</span>
                     </div>
