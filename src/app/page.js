@@ -1175,7 +1175,13 @@ export default function DarkApp(){
                         <div style={{padding:6,display:"flex",flexDirection:"column",gap:5}}>
                           {colVids.map(v=>(
                             <div key={v.id} draggable onDragStart={e=>e.dataTransfer.setData("vid",v.id)} onClick={()=>setVideoDetailModal({...v})} style={{background:CARD,border:"1px solid "+BOR,borderRadius:7,padding:"9px 10px",cursor:"pointer"}} className="hc">
+                              {(v.ref_thumb||v.minha_thumbnail)&&<img src={v.ref_thumb||v.minha_thumbnail} alt="" style={{width:"100%",height:52,objectFit:"cover",borderRadius:3,marginBottom:5}}/>}
                               <div style={{fontFamily:"'DM Sans'",fontSize:11,fontWeight:600,lineHeight:1.3,marginBottom:4}}>{v.meu_titulo||v.title}</div>
+                              <div style={{display:"flex",gap:3,flexWrap:"wrap",marginBottom:2}}>
+                                <span style={{background:ACCENT+"15",color:ACCENT,borderRadius:3,padding:"1px 5px",fontSize:9}}>Sr.</span>
+                                {v.ref_url&&<span style={{background:BLUE+"15",color:BLUE,borderRadius:3,padding:"1px 5px",fontSize:9}}>📎</span>}
+                                {v.short_script&&<span style={{background:PURP+"15",color:PURP,borderRadius:3,padding:"1px 5px",fontSize:9}}>📱</span>}
+                              </div>
                               {v.publish_date&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>📅 {fmtDate(v.publish_date)}</div>}
                             </div>
                           ))}
