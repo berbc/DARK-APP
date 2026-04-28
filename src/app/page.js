@@ -492,6 +492,8 @@ export default function DarkApp(){
     setChannelLoading(null);
   };
 
+  const _waldeId=clients.find(c=>c.name==="Sr. Waldemar")?.id;
+  const _darkId=clients.find(c=>c.name==="Canais Dark")?.id;
   const pendingTasks=tasks.filter(t=>!t.done).sort((a,b)=>(a.deadline||"9999").localeCompare(b.deadline||"9999"));
   const activeGoals=goals.filter(g=>!g.completed);
   const overdueLeads=leads.filter(l=>!l.converted&&l.follow_up_date&&deadlineDiff(l.follow_up_date)<=0);
@@ -530,8 +532,6 @@ export default function DarkApp(){
   const topGoals=activeGoals.slice(0,3).map(g=>({...g,plan:calcGoalPlan(g)}));
   const weekTasks=pendingTasks.filter(t=>t.deadline&&deadlineDiff(t.deadline)<=7&&deadlineDiff(t.deadline)>0);
   const thisMonthKey=thisMonth();
-  const _waldeId=clients.find(c=>c.name==="Sr. Waldemar")?.id;
-  const _darkId=clients.find(c=>c.name==="Canais Dark")?.id;
   const wVideos=videos.filter(v=>_waldeId?v.client_id===_waldeId:v.niche==="Sr. Waldemar");
   const wIdeas=ideas.filter(i=>_waldeId?i.client_id===_waldeId:(i.niche==="Sr. Waldemar"||i.source==="waldemar"));
   const darkIdeas=ideas.filter(i=>!i.used&&i.niche!=="Sr. Waldemar"&&i.source!=="waldemar"&&(!_waldeId||i.client_id!==_waldeId));
