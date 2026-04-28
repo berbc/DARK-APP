@@ -166,8 +166,28 @@ export default function DarkApp(){
   const flash=()=>{setSaved(true);setTimeout(()=>setSaved(false),2000);};
   const flashError=m=>{setErrorMsg(m);setTimeout(()=>setErrorMsg(""),4000);};
   const triggerConfetti=()=>{setConfetti(true);setTimeout(()=>setConfetti(false),2500);};
+  const playTimerSound=(type="work")=>{
+    try{
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      const notes=type==="work"?[523,659,784,1047]:[784,659,523];
+      notes.forEach((freq,i)=>{
+        const osc=ctx.createOscillator();const gain=ctx.createGain();
+        osc.connect(gain);gain.connect(ctx.destination);
+        osc.frequency.value=freq;osc.type="sine";
+        gain.gain.setValueAtTime(0.3,ctx.currentTime+i*0.18);
+        gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+i*0.18+0.3);
+        osc.start(ctx.currentTime+i*0.18);osc.stop(ctx.currentTime+i*0.18+0.3);
+      });
+    }catch(e){}
+  };
+  const sendNotification=(title,body)=>{
+    if("Notification" in window&&Notification.permission==="granted"){
+      new Notification(title,{body,icon:"/favicon.ico"});
+    }
+  };
 
   useEffect(()=>{
+    requestNotificationPermission();
     supabase.auth.getSession().then(({data:{session}})=>{setUser(session?.user??null);setCheckingAuth(false);});
     const{data:{subscription}}=supabase.auth.onAuthStateChange((_,s)=>setUser(s?.user??null));
     return()=>subscription.unsubscribe();
@@ -251,11 +271,15 @@ export default function DarkApp(){
   const handleTimerEnd=async()=>{
     if(timerMode==="work"){
       triggerConfetti();
+      playTimerSound("work");
+      sendNotification("🍅 Pomodoro concluído!","Ótimo trabalho! Hora de descansar 5 minutos.");
       const ns={...userStats,xp:(userStats.xp||0)+25,pomodoros_completed:(userStats.pomodoros_completed||0)+1};
       setUserStats(ns);if(userStats.id)await supabase.from("user_stats").update(ns).eq("id",userStats.id);
       setTimerMode("break");setTimerSeconds(5*60);
       try{localStorage.setItem("dark_timer_mode","break");localStorage.setItem("dark_timer_seconds",5*60);}catch{}
     } else {
+      playTimerSound("break");
+      sendNotification("☕ Descanso acabou!","Hora de voltar ao foco. Próximo pomodoro começando!");
       setTimerMode("work");setTimerSeconds(25*60);
       try{localStorage.setItem("dark_timer_mode","work");localStorage.setItem("dark_timer_seconds",25*60);}catch{}
     }
@@ -782,16 +806,17 @@ export default function DarkApp(){
                   </div>
                   {pendingTasks.length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:20}}>🎉 Nenhuma tarefa pendente!</div>}
                   {pendingTasks.map((t,i)=>(
-                    <div key={t.id} className="hr" onClick={()=>startTimer(t.id)} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 8px",borderBottom:"1px solid "+BOR,background:t.id===focusTaskId||(!focusTaskId&&i===0)?ACCENT+"06":undefined,borderRadius:t.id===focusTaskId||(!focusTaskId&&i===0)?6:0,cursor:"pointer"}}>
+                    <div key={t.id} className="hr" style={{display:"flex",alignItems:"center",gap:8,padding:"10px 8px",borderBottom:"1px solid "+BOR,background:t.id===focusTaskId||(!focusTaskId&&i===0)?ACCENT+"06":undefined,borderRadius:t.id===focusTaskId||(!focusTaskId&&i===0)?6:0}}>
                       <span style={{fontFamily:"'IBM Plex Mono'",color:HINT,fontSize:10,width:20,flexShrink:0}}>#{i+1}</span>
                       <div style={{width:5,height:5,borderRadius:1,background:{hot:RED,warn:ACCENT,normal:GREEN}[t.urgency||"normal"],flexShrink:0}}/>
-                      <div style={{flex:1,minWidth:0}}>
+                      <div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={()=>startTimer(t.id)}>
                         <div style={{fontFamily:"'DM Sans'",fontSize:13,fontWeight:t.id===focusTaskId||(!focusTaskId&&i===0)?600:400,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.title}</div>
                         <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{getClientName(t.client_id)} · {t.type||"Tarefa"}</div>
                       </div>
                       <div style={{display:"flex",gap:5,flexShrink:0,alignItems:"center"}}>
                         {t.deadline&&<span style={{background:deadlineColor(t.deadline)+"20",color:deadlineColor(t.deadline),borderRadius:4,padding:"1px 5px",fontSize:10,fontWeight:600}}>{deadlineLabel(t.deadline)}</span>}
                         <span style={{background:BG3,color:MUTED,borderRadius:4,padding:"1px 5px",fontSize:10}}>{t.estimated_hours}h</span>
+                        <button onClick={e=>{e.stopPropagation();setTaskEdit({...t});setTaskModal(true);}} style={{...btnGhost,padding:"1px 6px",fontSize:10}}>✏️</button>
                         <button onClick={e=>{e.stopPropagation();completeTask(t.id);}} style={{...btnGhost,padding:"1px 6px",fontSize:10,color:GREEN,borderColor:GREEN+"33"}}>✓</button>
                       </div>
                     </div>
