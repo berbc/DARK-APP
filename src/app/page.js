@@ -18,7 +18,7 @@ const PIPELINE_COLORS={"Roteiro":ACCENT,"Locução":BLUE,"Geração de Imagens":
 const TASK_TYPES=["Roteiro","Gravação","Edição","Thumbnail","Revisão","Upload","Reunião","Pesquisa","Postagem"];
 const SCRIPT_SECTIONS=["GANCHO","CONSTRUÇÃO","A VIRADA","DESENVOLVIMENTO","DESFECHO","CTA"];
 const SECTION_COLORS={"GANCHO":"#F59E0B","CONSTRUÇÃO":ACCENT,"A VIRADA":BLUE,"DESENVOLVIMENTO":PURP,"DESFECHO":GREEN,"CTA":TEXT};
-const GOAL_TYPE_LABELS={"videos_mes":"Vídeos/mês","seguidores":"Seguidores","adsense_mes":"AdSense/mês","faturamento_mes":"Faturamento/mês","clientes":"Nº de clientes","views_mes":"Views/mês","personalizada":"Personalizada"};
+const GOAL_TYPE_LABELS={"videos_mes":"Vídeos/mês","seguidores":"Seguidores (YT)","adsense_mes":"AdSense/mês","faturamento_mes":"Faturamento/mês","clientes":"Nº de clientes","views_mes":"Views/mês (YT)","personalizada":"Personalizada"};
 const YT_BENCH={cpm_br:8,views_per_video:5000,subs_per_1k:0.8};
 const DEFAULT_NICHES=[{name:"Curiosidades Gerais",keyword:"curiosidades fatos incríveis",cpm:"$4–8",active:true},{name:"Psicologia & Comportamento",keyword:"psicologia comportamento humano",cpm:"$8–15",active:true},{name:"Mistério & Paranormal",keyword:"misterio paranormal sobrenatural",cpm:"$5–9",active:true},{name:"True Crime",keyword:"crime real investigação",cpm:"$6–11",active:true},{name:"História Sombria",keyword:"historia sombria chocante",cpm:"$7–13",active:true},{name:"Ciência Sombria",keyword:"ciencia sombria experimentos",cpm:"$8–14",active:true},{name:"Filosofia Existencial",keyword:"filosofia existencial vida",cpm:"$10–18",active:true},{name:"Lendas Urbanas BR",keyword:"lendas urbanas brasil",cpm:"$4–7",active:true}];
 const FLAMENGO_CATEGORIES=[{name:"História",icon:"📜",color:RED},{name:"Jogadores Lendários",icon:"⚽",color:ACCENT},{name:"Partidas Históricas",icon:"🏆",color:GREEN},{name:"Mascote & Símbolos",icon:"🦅",color:ORANGE},{name:"Fundação & Origem",icon:"🏛",color:BLUE},{name:"Rivalidades",icon:"🔥",color:RED},{name:"Títulos",icon:"🥇",color:ACCENT},{name:"Curiosidades",icon:"💡",color:PURP}];
@@ -51,7 +51,11 @@ const calcGoalPlan=goal=>{
   const current=goal.current_value||0;const target_val=goal.target_value||0;
   const remaining=Math.max(0,target_val-current);const perMonth=remaining/monthsLeft;
   const pct=Math.min(100,Math.round((current/Math.max(1,target_val))*100));
-  const onTrack=current>=(target_val*(1-monthsLeft/Math.max(1,monthsLeft+1)))*.85;
+  // onTrack: se ainda tem tempo e progresso razoável, está no ritmo
+  const totalMonths=Math.max(1,Math.round((target-new Date(now.getFullYear(),now.getMonth()-6,1))/(1000*60*60*24*30)));
+  const monthsElapsed=Math.max(0,totalMonths-monthsLeft);
+  const expectedProgress=monthsElapsed>0?Math.round((target_val/totalMonths)*monthsElapsed):0;
+  const onTrack=monthsLeft>0?(current>=expectedProgress*.8||pct===0):pct>=100;
   const milestones=[];
   for(let i=1;i<=Math.min(monthsLeft,6);i++){
     const d=new Date(now.getFullYear(),now.getMonth()+i,1);
@@ -187,7 +191,7 @@ export default function DarkApp(){
   };
 
   useEffect(()=>{
-    requestNotificationPermission();
+    if(typeof window!=="undefined"&&"Notification" in window&&Notification.permission==="default")Notification.requestPermission();
     supabase.auth.getSession().then(({data:{session}})=>{setUser(session?.user??null);setCheckingAuth(false);});
     const{data:{subscription}}=supabase.auth.onAuthStateChange((_,s)=>setUser(s?.user??null));
     return()=>subscription.unsubscribe();
@@ -362,12 +366,35 @@ export default function DarkApp(){
   const deleteLib=async id=>{await supabase.from("library").delete().eq("id",id);setLibrary(prev=>prev.filter(l=>l.id!==id));};
   const saveGoal=async()=>{
     if(!goalEdit?.title?.trim())return;
-    if(goalEdit.id){const r=await supabase.from("goals").update(goalEdit).eq("id",goalEdit.id).select().single();if(r.data)setGoals(prev=>prev.map(g=>g.id===r.data.id?r.data:g));}
-    else{const r=await supabase.from("goals").insert(goalEdit).select().single();if(r.data)setGoals(prev=>[r.data,...prev]);}
+    const payload={...goalEdit,youtube_channel_id:goalEdit.youtube_channel_id||null};
+    if(goalEdit.id){const r=await supabase.from("goals").update(payload).eq("id",goalEdit.id).select().single();if(r.data)setGoals(prev=>prev.map(g=>g.id===r.data.id?r.data:g));}
+    else{const r=await supabase.from("goals").insert(payload).select().single();if(r.data)setGoals(prev=>[r.data,...prev]);}
     setGoalModal(false);setGoalEdit(null);flash();
   };
   const deleteGoal=async id=>{await supabase.from("goals").delete().eq("id",id);setGoals(prev=>prev.filter(g=>g.id!==id));};
   const updateGoalProgress=async(id,val)=>{const{data}=await supabase.from("goals").update({current_value:val}).eq("id",id).select().single();if(data)setGoals(prev=>prev.map(g=>g.id===data.id?data:g));flash();};
+  const syncGoalFromYouTube=async(goal)=>{
+    const apiKey=process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
+    if(!apiKey||!goal.youtube_channel_id)return;
+    try{
+      const r=await fetch("https://www.googleapis.com/youtube/v3/channels?part=statistics&id="+goal.youtube_channel_id+"&key="+apiKey);
+      const d=await r.json();
+      const stats=d.items?.[0]?.statistics;
+      if(!stats)return;
+      let val=goal.current_value;
+      if(goal.type==="seguidores")val=parseInt(stats.subscriberCount||0);
+      else if(goal.type==="views_mes")val=parseInt(stats.viewCount||0);
+      if(val!==goal.current_value){
+        const{data}=await supabase.from("goals").update({current_value:val}).eq("id",goal.id).select().single();
+        if(data)setGoals(prev=>prev.map(g=>g.id===data.id?data:g));
+      }
+    }catch(e){flashError("Erro ao sincronizar meta com YouTube");}
+  };
+  const syncAllGoals=async()=>{
+    const ytGoals=goals.filter(g=>g.youtube_channel_id&&(g.type==="seguidores"||g.type==="views_mes"));
+    await Promise.all(ytGoals.map(g=>syncGoalFromYouTube(g)));
+    if(goals.filter(g=>g.youtube_channel_id).length>0)flash();
+  };
   const saveLead=async()=>{
     if(!leadEdit?.name?.trim())return;
     if(leadEdit.id){const r=await supabase.from("leads").update(leadEdit).eq("id",leadEdit.id).select().single();if(r.data)setLeads(prev=>prev.map(l=>l.id===r.data.id?r.data:l));}
@@ -846,7 +873,10 @@ export default function DarkApp(){
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:2}}>🎯 METAS</div>
-              <button onClick={()=>{setGoalEdit({title:"",type:"videos_mes",horizon:goalHorizon,target_value:0,current_value:0,target_date:"",notes:""});setGoalModal(true);}} style={btnGold}>+ NOVA META</button>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={syncAllGoals} style={{...btnGhost,fontSize:12,color:BLUE,borderColor:BLUE+"44"}}>🔄 Sincronizar YouTube</button>
+                <button onClick={()=>{setGoalEdit({title:"",type:"videos_mes",horizon:goalHorizon,target_value:0,current_value:0,target_date:"",notes:"",youtube_channel_id:""});setGoalModal(true);}} style={btnGold}>+ NOVA META</button>
+              </div>
             </div>
             <div style={{display:"flex",gap:2,borderBottom:"1px solid "+BOR,marginBottom:24}}>
               {["curto","medio","longo"].map(h=>{const hc={curto:ACCENT,medio:BLUE,longo:PURP}[h];return(<button key={h} onClick={()=>setGoalHorizon(h)} style={{fontFamily:"'DM Sans'",fontSize:12,color:goalHorizon===h?hc:MUTED,background:"transparent",border:"none",borderBottom:goalHorizon===h?"2px solid "+hc:"2px solid transparent",padding:"10px 20px",cursor:"pointer",fontWeight:goalHorizon===h?600:400}}>{h==="curto"?"⚡ Curto Prazo":h==="medio"?"📈 Médio Prazo":"🚀 Longo Prazo"}</button>);})}
@@ -871,6 +901,7 @@ export default function DarkApp(){
                     </div>
                     <div style={{display:"flex",gap:6,flexShrink:0}}>
                       <button onClick={()=>setSelectedGoal(isSel?null:g)} style={{...btnGhost,padding:"4px 10px",fontSize:11,color:hc,borderColor:hc+"44"}}>{isSel?"▲":"▼ plano"}</button>
+                      {g.youtube_channel_id&&<button onClick={()=>syncGoalFromYouTube(g)} style={{...btnGhost,padding:"4px 8px",fontSize:11,color:BLUE,borderColor:BLUE+"33"}}>🔄</button>}
                       <button onClick={()=>{setGoalEdit({...g});setGoalModal(true);}} style={{...btnGhost,padding:"4px 8px",fontSize:11}}>✏️</button>
                       <button onClick={()=>deleteGoal(g.id)} style={{background:"none",border:"none",color:RED,cursor:"pointer",fontSize:12}}>✕</button>
                     </div>
@@ -1911,7 +1942,7 @@ export default function DarkApp(){
 
       {libModal&&libEdit&&<div onClick={e=>e.target===e.currentTarget&&(setLibModal(false),setLibEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:480,padding:26}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>{libEdit.id?"EDITAR":"NOVO ITEM"}</div><button onClick={()=>{setLibModal(false);setLibEdit(null);}} style={btnGhost}>✕</button></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}><div><span style={lbl}>Tipo</span><select value={libEdit.type||"hook"} onChange={e=>setLibEdit({...libEdit,type:e.target.value})} style={inp}>{["hook","titulo","cta","thumbnail","template"].map(t=><option key={t}>{t}</option>)}</select></div><div><span style={lbl}>Nicho</span><select value={libEdit.niche||""} onChange={e=>setLibEdit({...libEdit,niche:e.target.value})} style={inp}><option value="">Geral</option>{activeNiches.map(n=><option key={n.id}>{n.name}</option>)}</select></div></div><div style={{marginBottom:14}}><span style={lbl}>Conteúdo</span><textarea value={libEdit.content||""} onChange={e=>setLibEdit({...libEdit,content:e.target.value})} style={{...inp,minHeight:90}} placeholder="Hook, título, CTA..."/></div><div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setLibModal(false);setLibEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveLib} style={btnGold}>SALVAR</button></div></div></div>}
 
-      {goalModal&&goalEdit&&<div onClick={e=>e.target===e.currentTarget&&(setGoalModal(false),setGoalEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:460,padding:26}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>NOVA META</div><button onClick={()=>{setGoalModal(false);setGoalEdit(null);}} style={btnGhost}>✕</button></div><div style={{marginBottom:12}}><span style={lbl}>Título</span><input value={goalEdit.title||""} onChange={e=>setGoalEdit({...goalEdit,title:e.target.value})} placeholder="Ex: 100k inscritos" style={inp}/></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}><div><span style={lbl}>Tipo</span><select value={goalEdit.type||"videos_mes"} onChange={e=>setGoalEdit({...goalEdit,type:e.target.value})} style={inp}>{Object.entries(GOAL_TYPE_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div><div><span style={lbl}>Horizonte</span><select value={goalEdit.horizon||"curto"} onChange={e=>setGoalEdit({...goalEdit,horizon:e.target.value})} style={inp}><option value="curto">Curto Prazo</option><option value="medio">Médio Prazo</option><option value="longo">Longo Prazo</option></select></div><div><span style={lbl}>Valor alvo</span><input type="number" value={goalEdit.target_value||0} onChange={e=>setGoalEdit({...goalEdit,target_value:parseFloat(e.target.value)||0})} style={inp}/></div><div><span style={lbl}>Valor atual</span><input type="number" value={goalEdit.current_value||0} onChange={e=>setGoalEdit({...goalEdit,current_value:parseFloat(e.target.value)||0})} style={inp}/></div><div><span style={lbl}>Data alvo</span><input type="date" value={goalEdit.target_date||""} onChange={e=>setGoalEdit({...goalEdit,target_date:e.target.value})} style={inp}/></div></div><div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setGoalModal(false);setGoalEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveGoal} style={btnGold}>SALVAR</button></div></div></div>}
+      {goalModal&&goalEdit&&<div onClick={e=>e.target===e.currentTarget&&(setGoalModal(false),setGoalEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:460,padding:26}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>NOVA META</div><button onClick={()=>{setGoalModal(false);setGoalEdit(null);}} style={btnGhost}>✕</button></div><div style={{marginBottom:12}}><span style={lbl}>Título</span><input value={goalEdit.title||""} onChange={e=>setGoalEdit({...goalEdit,title:e.target.value})} placeholder="Ex: 100k inscritos" style={inp}/></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}><div><span style={lbl}>Tipo</span><select value={goalEdit.type||"videos_mes"} onChange={e=>setGoalEdit({...goalEdit,type:e.target.value})} style={inp}>{Object.entries(GOAL_TYPE_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div><div><span style={lbl}>Horizonte</span><select value={goalEdit.horizon||"curto"} onChange={e=>setGoalEdit({...goalEdit,horizon:e.target.value})} style={inp}><option value="curto">Curto Prazo</option><option value="medio">Médio Prazo</option><option value="longo">Longo Prazo</option></select></div><div><span style={lbl}>Valor alvo</span><input type="number" value={goalEdit.target_value||0} onChange={e=>setGoalEdit({...goalEdit,target_value:parseFloat(e.target.value)||0})} style={inp}/></div><div><span style={lbl}>Valor atual</span><input type="number" value={goalEdit.current_value||0} onChange={e=>setGoalEdit({...goalEdit,current_value:parseFloat(e.target.value)||0})} style={inp}/></div><div><span style={lbl}>Data alvo</span><input type="date" value={goalEdit.target_date||""} onChange={e=>setGoalEdit({...goalEdit,target_date:e.target.value})} style={inp}/></div></div>{(goalEdit.type==="seguidores"||goalEdit.type==="views_mes")&&<div style={{marginBottom:12}}><span style={lbl}>Channel ID YouTube <span style={{color:HINT,fontSize:9,textTransform:"none"}}>para sync automático</span></span><input value={goalEdit.youtube_channel_id||""} onChange={e=>setGoalEdit({...goalEdit,youtube_channel_id:e.target.value})} placeholder="UCxxxxxxxxxx" style={inp}/></div>}<div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setGoalModal(false);setGoalEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveGoal} style={btnGold}>SALVAR</button></div></div></div>}
 
       {leadModal&&leadEdit&&<div onClick={e=>e.target===e.currentTarget&&(setLeadModal(false),setLeadEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:500,padding:26,maxHeight:"90vh",overflowY:"auto"}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>{leadEdit.id?"EDITAR LEAD":"NOVO LEAD"}</div><button onClick={()=>{setLeadModal(false);setLeadEdit(null);}} style={btnGhost}>✕</button></div><div style={{marginBottom:12}}><span style={lbl}>Nome</span><input value={leadEdit.name||""} onChange={e=>setLeadEdit({...leadEdit,name:e.target.value})} style={inp}/></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><div style={{marginBottom:12}}><span style={lbl}>Contato</span><input value={leadEdit.contact||""} onChange={e=>setLeadEdit({...leadEdit,contact:e.target.value})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Serviço</span><input value={leadEdit.service||""} onChange={e=>setLeadEdit({...leadEdit,service:e.target.value})} placeholder="Gestão de canal..." style={inp}/></div>
       <div style={{marginBottom:12,gridColumn:"1/-1"}}><span style={lbl}>📐 CALCULADORA DE PROPOSTA</span><div style={{background:BG3,borderRadius:8,padding:14}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}><div><span style={{...lbl,marginBottom:4}}>Duração (min)</span><input type="number" value={leadEdit.video_minutes||0} step="0.5" min="0" onChange={e=>{const min=parseFloat(e.target.value)||0;const desc=leadEdit.discount_pct||0;const bruto=min*6000;const final=bruto*(1-desc/100);setLeadEdit({...leadEdit,video_minutes:min,bruto_value:bruto,proposed_value:Math.round(final)});}} style={inp} placeholder="3.5"/></div><div><span style={{...lbl,marginBottom:4}}>Desconto %</span><input type="number" value={leadEdit.discount_pct||0} min="0" max="100" onChange={e=>{const desc=parseFloat(e.target.value)||0;const min=leadEdit.video_minutes||0;const bruto=min*6000;const final=bruto*(1-desc/100);setLeadEdit({...leadEdit,discount_pct:desc,bruto_value:bruto,proposed_value:Math.round(final)});}} style={inp} placeholder="30"/></div><div><span style={{...lbl,marginBottom:4}}>Valor final</span><div style={{background:BG2,border:"1px solid "+ACCENT+"44",borderRadius:6,padding:"8px 12px",fontFamily:"'Bebas Neue'",fontSize:16,color:ACCENT}}>{fmtCurrency(leadEdit.proposed_value||0)}</div></div></div>{(leadEdit.video_minutes||0)>0&&<div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{leadEdit.video_minutes}min × R$6.000 = {fmtCurrency((leadEdit.video_minutes||0)*6000)}{(leadEdit.discount_pct||0)>0?" — "+leadEdit.discount_pct+"% = "+fmtCurrency(leadEdit.proposed_value||0):""}</div>}</div></div>
