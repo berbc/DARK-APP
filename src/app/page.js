@@ -295,6 +295,7 @@ export default function DarkApp(){
     const{data}=await supabase.from("time_entries").insert({task_id:taskId,client_id:task.client_id,started_at:new Date().toISOString()}).select().single();
     if(data)setActiveEntry(data);
   };
+  const startBreak=()=>{setTimerRunning(true);};
   const stopTimeEntry=async()=>{
     if(!activeEntry)return;
     const now=new Date();const mins=Math.round((now-new Date(activeEntry.started_at))/60000);
@@ -821,7 +822,7 @@ export default function DarkApp(){
                   {pendingTasks.find(t=>t.id===focusTaskId||(!focusTaskId&&t===pendingTasks[0]))&&<div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:1,marginBottom:10}}>{(pendingTasks.find(t=>t.id===focusTaskId)||pendingTasks[0])?.title}</div>}
                   <div style={{fontFamily:"'Bebas Neue'",fontSize:52,letterSpacing:-2,color:timerMode==="work"?ACCENT:GREEN,lineHeight:1,marginBottom:16}}>{timerFmt(timerSeconds)}</div>
                   <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                    {!timerRunning?<button onClick={()=>pendingTasks[0]&&startTimer((pendingTasks.find(t=>t.id===focusTaskId)||pendingTasks[0])?.id)} style={{...btnGold,opacity:pendingTasks.length?1:.5}}>▶ INICIAR</button>:<button onClick={()=>{setTimerRunning(false);stopTimeEntry();}} style={{...btnGhost,color:ACCENT,borderColor:ACCENT+"44"}}>⏸ PAUSAR</button>}
+                    {!timerRunning?(timerMode==="break"?<button onClick={startBreak} style={{...btnGold,background:GREEN,color:"#111"}}>▶ INICIAR DESCANSO</button>:<button onClick={()=>pendingTasks[0]&&startTimer((pendingTasks.find(t=>t.id===focusTaskId)||pendingTasks[0])?.id)} style={{...btnGold,opacity:pendingTasks.length?1:.5}}>▶ INICIAR</button>):<button onClick={()=>{setTimerRunning(false);stopTimeEntry();}} style={{...btnGhost,color:timerMode==="break"?GREEN:ACCENT,borderColor:(timerMode==="break"?GREEN:ACCENT)+"44"}}>⏸ PAUSAR</button>}
                     {(pendingTasks.find(t=>t.id===focusTaskId)||pendingTasks[0])&&<button onClick={()=>completeTask((pendingTasks.find(t=>t.id===focusTaskId)||pendingTasks[0])?.id)} style={{...btnGhost,color:GREEN,borderColor:GREEN+"44"}}>✓ CONCLUIR</button>}
                     {focusTaskId&&<button onClick={()=>setFocusTaskId(null)} style={btnGhost}>→ Pular</button>}
                   </div>
