@@ -343,7 +343,7 @@ export default function DarkApp(){
   const moveVideo=async(id,status)=>{const{data}=await supabase.from("videos").update({status}).eq("id",id).select().single();if(data)setVideos(prev=>prev.map(v=>v.id===data.id?data:v));};
   const useVideoAsBase=async(rv,niche)=>{
     const isWalde=niche==="Sr. Waldemar";
-    const{data}=await supabase.from("videos").insert({title:rv.title,niche:isWalde?"Sr. Waldemar":niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:isWalde?waldeClientId:darkClientId,ref_titulo:rv.title,ref_thumb:rv.thumb||"",ref_url:rv.url||"",ref_canal:rv.channel||"",ref_views:rv.views||0}).select().single();
+    const _wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;const _dc=clients.find(c=>c.name==="Canais Dark")?.id;const{data}=await supabase.from("videos").insert({title:rv.title,niche:isWalde?"Sr. Waldemar":niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:isWalde?_wc:_dc,ref_titulo:rv.title,ref_thumb:rv.thumb||"",ref_url:rv.url||"",ref_canal:rv.channel||"",ref_views:rv.views||0}).select().single();
     if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);setUseAsBaseModal(null);setActiveTab(isWalde?5:4);flash();}
   };
   const openScript=v=>{setScriptData({...v});const takes=v.script?JSON.parse(v.script||"[]"):[];setScriptTakes(takes.length?takes:[{id:Date.now(),section:"GANCHO",startTime:"00:00",endTime:"00:07",angle:"A",narration:"",visual:"",prompt:""}]);setScriptModal(true);};
@@ -412,9 +412,9 @@ export default function DarkApp(){
   };
   const saveIdea=async(title,opts={})=>{const{data}=await supabase.from("ideas").insert({title,source:opts.source||"quick",niche:opts.niche||"",description:opts.description||""}).select().single();if(data)setIdeas(prev=>[data,...prev]);flash();};
   const saveQuickIdea=async title=>saveIdea(title);
-  const saveWaldeIdea=async(title,category)=>saveIdea(title,{source:"waldemar",niche:"Sr. Waldemar",client_id:waldeClientId,description:category||""});
-  const createWaldeVideo=async initial=>{const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:"Sr. Waldemar",status:"Roteiro",client_id:waldeClientId,...(initial||{})}).select().single();if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);}};
-  const useWaldeIdeaAsVideo=async idea=>{const{data}=await supabase.from("videos").insert({title:idea.title,niche:"Sr. Waldemar",status:"Roteiro",client_id:waldeClientId,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
+  const saveWaldeIdea=async(title,category)=>{const _wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;return saveIdea(title,{source:"waldemar",niche:"Sr. Waldemar",client_id:_wc,description:category||""});};
+  const createWaldeVideo=async initial=>{const _wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:"Sr. Waldemar",status:"Roteiro",client_id:_wc,...(initial||{})}).select().single();if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);}};
+  const useWaldeIdeaAsVideo=async idea=>{const _wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;const{data}=await supabase.from("videos").insert({title:idea.title,niche:"Sr. Waldemar",status:"Roteiro",client_id:_wc,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
   const deleteIdea=async id=>{await supabase.from("ideas").delete().eq("id",id);setIdeas(prev=>prev.filter(i=>i.id!==id));};
   const restoreIdea=async id=>{const{data}=await supabase.from("ideas").update({used:false}).eq("id",id).select().single();if(data)setIdeas(prev=>prev.map(i=>i.id===data.id?data:i));flash();};
   const useIdeaAsVideo=async idea=>{const{data}=await supabase.from("videos").insert({title:idea.title,niche:idea.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:darkClientId,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
@@ -1180,7 +1180,7 @@ export default function DarkApp(){
                 {["ideias","pipeline","referencias","stats"].map(s=>(
                   <button key={s} onClick={()=>setWSection(s)} style={{...btnGhost,color:wSection===s?ACCENT:MUTED,borderColor:wSection===s?ACCENT+"44":BOR,fontSize:12}}>{s==="ideias"?"💡 Ideias":s==="pipeline"?"🎬 Pipeline":s==="referencias"?"📺 Referências":"📊 Stats"}</button>
                 ))}
-                <button onClick={()=>createWaldeVideo()} style={btnGold}>+ NOVO VÍDEO</button>
+                <button onClick={async()=>{const _wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;const{data}=await supabase.from("videos").insert({title:"Novo Vídeo",niche:"Sr. Waldemar",status:"Roteiro",client_id:_wc}).select().single();if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);}}} style={btnGold}>+ NOVO VÍDEO</button>
               </div>
             </div>
             {wSection==="ideias"&&(
