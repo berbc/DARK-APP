@@ -328,7 +328,7 @@ export default function DarkApp(){
     const client=clients.find(c=>c.id===cId);
     const contractValue=client?.contract_value||0;
     const realHourlyRate=hoursWorked>0&&contractValue>0?contractValue/hoursWorked:0;
-    return{hoursWorked:Math.round(hoursWorked*10)/10,contractValue,realHourlyRate:Math.round(realHourlyRate),idealHourlyRate:client?.rate_per_hour||0,pendingTasks:cTasks.filter(t=>!t.done).sort((a,b)=>(a.deadline||"9999").localeCompare(b.deadline||"9999")),doneTasks:cTasks.filter(t=>t.done).length};
+    return{hoursWorked:Math.round(hoursWorked*10)/10,contractValue,realHourlyRate:Math.round(realHourlyRate),idealHourlyRate:client?.rate_per_hour||0,pendingTasks:cTasks.filter(t=>!t.done).sort((a,b)=>((a.deadline||"9999")+"T"+(a.task_time||"23:59")).localeCompare((b.deadline||"9999")+"T"+(b.task_time||"23:59"))),doneTasks:cTasks.filter(t=>t.done).length};
   };
   const saveVideoDetail=async vd=>{
     if(!vd?.id)return;
@@ -523,6 +523,29 @@ export default function DarkApp(){
     const{data}=await supabase.from("videos").insert({title:idea.title,niche:chInfo?.niche||ch,status:"Roteiro",client_id:cId,notes:idea.description||""}).select().single();
     if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}
   };
+  const copyVideoToChannels=async(video, targetChannels)=>{
+    for(const chKey of targetChannels){
+      const chInfo=INTL_CHANNELS.find(x=>x.key===chKey);
+      const cId=clients.find(c=>c.name===chInfo?.name)?.id;
+      const{data}=await supabase.from("videos").insert({
+        title:video.title,
+        meu_titulo:video.meu_titulo||"",
+        niche:chInfo?.niche||chKey,
+        status:video.status,
+        client_id:cId,
+        hook:video.hook||"",
+        meu_roteiro:video.meu_roteiro||"",
+        ref_titulo:video.ref_titulo||"",
+        ref_thumb:video.ref_thumb||"",
+        ref_url:video.ref_url||"",
+        ref_canal:video.ref_canal||"",
+        ref_views:video.ref_views||0,
+        notes:(video.notes||"")+"[Copiado de "+INTL_CHANNELS.find(x=>x.key===activeChannel)?.name+"]",
+      }).select().single();
+      if(data)setVideos(prev=>[data,...prev]);
+    }
+    flash();
+  };
   const fetchIntlRefVideos=async(niche)=>{
     const apiKey=process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
     if(!apiKey||intlRefVideos[niche.name])return;
@@ -572,7 +595,14 @@ export default function DarkApp(){
     setChannelLoading(null);
   };
 
-  const pendingTasks=tasks.filter(t=>!t.done).sort((a,b)=>(a.deadline||"9999").localeCompare(b.deadline||"9999"));
+  const sortByDateAndTime=(a,b)=>{
+    const dateA=(a.deadline||"9999")+"T"+(a.task_time||"23:59");
+    const dateB=(b.deadline||"9999")+"T"+(b.task_time||"23:59");
+    return dateA.localeCompare(dateB);
+  };
+  const FOCUS_TYPES=["Roteiro","Gravação","Edição","Thumbnail","Revisão","Upload","Pesquisa","Postagem"];
+  const pendingTasks=tasks.filter(t=>!t.done).sort(sortByDateAndTime);
+  const focusTasks=pendingTasks.filter(t=>!t.type||t.type!=="Reunião"||FOCUS_TYPES.includes(t.type));
   const activeGoals=goals.filter(g=>!g.completed);
   const overdueLeads=leads.filter(l=>!l.converted&&l.follow_up_date&&deadlineDiff(l.follow_up_date)<=0);
   const getClientColor=cId=>{const c=clients.find(c=>c.id===cId);return c?.color||ACCENT;};
@@ -819,27 +849,27 @@ export default function DarkApp(){
               <div>
                 <div style={{...card,marginBottom:14,border:"1px solid "+(timerMode==="work"?ACCENT:GREEN)+"44"}}>
                   <div style={{fontFamily:"'DM Sans'",fontSize:10,color:timerMode==="work"?ACCENT:GREEN,letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>{timerMode==="work"?"🍅 Pomodoro 25min":"☕ Descanso 5min"}</div>
-                  {pendingTasks.find(t=>t.id===focusTaskId||(!focusTaskId&&t===pendingTasks[0]))&&<div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:1,marginBottom:10}}>{(pendingTasks.find(t=>t.id===focusTaskId)||pendingTasks[0])?.title}</div>}
+                  {focusTasks.find(t=>t.id===focusTaskId||(!focusTaskId&&t===focusTasks[0]))&&<div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:1,marginBottom:10}}>{(focusTasks.find(t=>t.id===focusTaskId)||focusTasks[0])?.title}</div>}
                   <div style={{fontFamily:"'Bebas Neue'",fontSize:52,letterSpacing:-2,color:timerMode==="work"?ACCENT:GREEN,lineHeight:1,marginBottom:16}}>{timerFmt(timerSeconds)}</div>
                   <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                    {!timerRunning?(timerMode==="break"?<button onClick={startBreak} style={{...btnGold,background:GREEN,color:"#111"}}>▶ INICIAR DESCANSO</button>:<button onClick={()=>pendingTasks[0]&&startTimer((pendingTasks.find(t=>t.id===focusTaskId)||pendingTasks[0])?.id)} style={{...btnGold,opacity:pendingTasks.length?1:.5}}>▶ INICIAR</button>):<button onClick={()=>{setTimerRunning(false);stopTimeEntry();}} style={{...btnGhost,color:timerMode==="break"?GREEN:ACCENT,borderColor:(timerMode==="break"?GREEN:ACCENT)+"44"}}>⏸ PAUSAR</button>}
-                    {(pendingTasks.find(t=>t.id===focusTaskId)||pendingTasks[0])&&<button onClick={()=>completeTask((pendingTasks.find(t=>t.id===focusTaskId)||pendingTasks[0])?.id)} style={{...btnGhost,color:GREEN,borderColor:GREEN+"44"}}>✓ CONCLUIR</button>}
+                    {!timerRunning?(timerMode==="break"?<button onClick={startBreak} style={{...btnGold,background:GREEN,color:"#111"}}>▶ INICIAR DESCANSO</button>:<button onClick={()=>focusTasks[0]&&startTimer((focusTasks.find(t=>t.id===focusTaskId)||focusTasks[0])?.id)} style={{...btnGold,opacity:focusTasks.length?1:.5}}>▶ INICIAR</button>):<button onClick={()=>{setTimerRunning(false);stopTimeEntry();}} style={{...btnGhost,color:timerMode==="break"?GREEN:ACCENT,borderColor:(timerMode==="break"?GREEN:ACCENT)+"44"}}>⏸ PAUSAR</button>}
+                    {(focusTasks.find(t=>t.id===focusTaskId)||focusTasks[0])&&<button onClick={()=>completeTask((focusTasks.find(t=>t.id===focusTaskId)||focusTasks[0])?.id)} style={{...btnGhost,color:GREEN,borderColor:GREEN+"44"}}>✓ CONCLUIR</button>}
                     {focusTaskId&&<button onClick={()=>setFocusTaskId(null)} style={btnGhost}>→ Pular</button>}
                   </div>
                 </div>
                 <div style={card}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
-                    <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:2}}>PLANO DO DIA</div>
+                    <div style={{flex:1}}><div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:2}}>PLANO DO DIA</div><div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,marginTop:2}}>Reuniões aparecem só na Agenda</div></div>
                     <button onClick={()=>{setTaskEdit({title:"",urgency:"normal",estimated_hours:1,deadline:today()});setTaskModal(true);}} style={{...btnGhost,fontSize:10,padding:"3px 8px"}}>+ Tarefa</button>
                   </div>
-                  {pendingTasks.length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:20}}>🎉 Nenhuma tarefa pendente!</div>}
-                  {pendingTasks.map((t,i)=>(
+                  {focusTasks.length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:20}}>🎉 Nenhuma tarefa pendente!</div>}
+                  {focusTasks.map((t,i)=>(
                     <div key={t.id} className="hr" style={{display:"flex",alignItems:"center",gap:8,padding:"10px 8px",borderBottom:"1px solid "+BOR,background:t.id===focusTaskId||(!focusTaskId&&i===0)?ACCENT+"06":undefined,borderRadius:t.id===focusTaskId||(!focusTaskId&&i===0)?6:0}}>
                       <span style={{fontFamily:"'IBM Plex Mono'",color:HINT,fontSize:10,width:20,flexShrink:0}}>#{i+1}</span>
                       <div style={{width:5,height:5,borderRadius:1,background:{hot:RED,warn:ACCENT,normal:GREEN}[t.urgency||"normal"],flexShrink:0}}/>
                       <div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={()=>startTimer(t.id)}>
                         <div style={{fontFamily:"'DM Sans'",fontSize:13,fontWeight:t.id===focusTaskId||(!focusTaskId&&i===0)?600:400,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.title}</div>
-                        <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{getClientName(t.client_id)} · {t.type||"Tarefa"}</div>
+                        <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{t.task_time&&<span style={{color:ACCENT,fontWeight:600,marginRight:4}}>{t.task_time}</span>}{getClientName(t.client_id)} · {t.type||"Tarefa"}</div>
                       </div>
                       <div style={{display:"flex",gap:5,flexShrink:0,alignItems:"center"}}>
                         {t.deadline&&<span style={{background:deadlineColor(t.deadline)+"20",color:deadlineColor(t.deadline),borderRadius:4,padding:"1px 5px",fontSize:10,fontWeight:600}}>{deadlineLabel(t.deadline)}</span>}
@@ -945,7 +975,7 @@ export default function DarkApp(){
             </div>
             {getWeekDates(weekOffset).map(({date,label})=>{
               const isToday=date===today();
-              const dayTasks=tasks.filter(t=>t.deadline===date&&!t.done);
+              const dayTasks=tasks.filter(t=>t.deadline===date&&!t.done).sort((a,b)=>(a.task_time||"23:59").localeCompare(b.task_time||"23:59"));
               const totalH=dayTasks.reduce((s,t)=>s+(t.estimated_hours||0),0);
               const lc=totalH>8?RED:totalH>5?ACCENT:GREEN;
               return(
@@ -961,9 +991,9 @@ export default function DarkApp(){
                       {dayTasks.length===0?<div style={{fontFamily:"'DM Sans'",fontSize:12,color:HINT}}>—</div>:dayTasks.map(t=>(
                         <div key={t.id} onClick={()=>{setTaskEdit({...t});setTaskModal(true);}} style={{display:"flex",gap:10,padding:"10px 12px",background:getClientColor(t.client_id)+"07",border:"1px solid "+getClientColor(t.client_id)+"22",borderRadius:7,cursor:"pointer",alignItems:"center"}}>
                           <div style={{flex:1}}>
-                            <div style={{fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:1,color:getClientColor(t.client_id)}}>{getClientName(t.client_id).toUpperCase()}</div>
+                            <div style={{display:"flex",alignItems:"center",gap:6}}><div style={{fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:1,color:getClientColor(t.client_id)}}>{getClientName(t.client_id).toUpperCase()}</div>{t.type==="Reunião"&&<span style={{background:PURP+"20",color:PURP,borderRadius:4,padding:"1px 6px",fontSize:9,fontWeight:600}}>📅 REUNIÃO</span>}</div>
                             <div style={{fontFamily:"'DM Sans'",fontSize:13,textDecoration:t.done?"line-through":"none",opacity:t.done?.6:1}}>{t.title}</div>
-                            <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{t.type||"Tarefa"} · {t.estimated_hours}h</div>
+                            <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{t.task_time&&<span style={{color:ACCENT,fontWeight:600,marginRight:6}}>{t.task_time}</span>}{t.type||"Tarefa"} · {t.estimated_hours}h</div>
                           </div>
                           {t.done?<span style={{color:GREEN,fontSize:16}}>✓</span>:<span style={{background:deadlineColor(t.deadline)+"20",color:deadlineColor(t.deadline),borderRadius:4,padding:"2px 7px",fontSize:10,fontWeight:600,flexShrink:0}}>{t.urgency==="hot"?"🔥":"OK"}</span>}
                         </div>
@@ -1367,11 +1397,21 @@ export default function DarkApp(){
                             <div key={v.id} draggable onDragStart={e=>e.dataTransfer.setData("vid",v.id)} onClick={()=>setVideoDetailModal({...v})} style={{background:CARD,border:"1px solid "+(v.ref_url?BLUE:BOR),borderRadius:7,padding:"9px 10px",cursor:"pointer"}} className="hc">
                               {(v.ref_thumb||v.minha_thumbnail)&&<img src={v.ref_thumb||v.minha_thumbnail} alt="" style={{width:"100%",height:52,objectFit:"cover",borderRadius:3,marginBottom:5}}/>}
                               <div style={{fontFamily:"'DM Sans'",fontSize:11,fontWeight:600,lineHeight:1.3,marginBottom:4}}>{v.meu_titulo||v.title}</div>
-                              <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+                              <div style={{display:"flex",gap:3,flexWrap:"wrap",marginBottom:4}}>
                                 <span style={{background:(ch?.color||ACCENT)+"20",color:ch?.color||ACCENT,borderRadius:3,padding:"1px 5px",fontSize:9}}>{ch?.flag} {ch?.lang}</span>
                                 {v.ref_url&&<span style={{background:BLUE+"15",color:BLUE,borderRadius:3,padding:"1px 5px",fontSize:9}}>📎</span>}
                               </div>
-                              {v.publish_date&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED,marginTop:3}}>📅 {fmtDate(v.publish_date)}</div>}
+                              {v.publish_date&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED,marginBottom:4}}>📅 {fmtDate(v.publish_date)}</div>}
+                              <div style={{display:"flex",gap:3,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+                                {INTL_CHANNELS.filter(x=>x.key!==activeChannel).map(x=>(
+                                  <button key={x.key} onClick={e=>{e.stopPropagation();copyVideoToChannels(v,[x.key]);}} style={{...btnGhost,padding:"1px 5px",fontSize:9,color:x.color,borderColor:x.color+"44",flex:1}} title={"Copiar para "+x.name}>
+                                    {x.flag}
+                                  </button>
+                                ))}
+                                <button onClick={e=>{e.stopPropagation();copyVideoToChannels(v,INTL_CHANNELS.filter(x=>x.key!==activeChannel).map(x=>x.key));}} style={{...btnGhost,padding:"1px 5px",fontSize:9,color:ACCENT,borderColor:ACCENT+"44",flex:1}} title="Copiar para todos">
+                                  ⊕
+                                </button>
+                              </div>
                             </div>
                           ))}
                           {colVids.length===0&&<div style={{color:HINT,fontSize:11,textAlign:"center",padding:14}}>Arraste aqui</div>}
