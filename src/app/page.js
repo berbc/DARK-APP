@@ -34,6 +34,21 @@ const INTL_NICHES=[
   {name:"Crimes Corporativos",keyword:"corporate crime collapse company scandal",cpm:"$18-30"},
   {name:"Mistérios Históricos",keyword:"historical mysteries hidden history science",cpm:"$12-20"},
 ];
+// Busca "viral": vídeos recentes ranqueados por views/dia (velocidade), não por views totais.
+// Se a janela recente não tiver resultados (ex.: canal parado), cai pro all-time.
+const VIRAL_DAYS=90;
+const viralMap=v=>{const views=parseInt(v.statistics?.viewCount||0);const pub=v.snippet?.publishedAt?new Date(v.snippet.publishedAt):null;const ageDays=pub?Math.max(1,Math.round((Date.now()-pub)/86400000)):null;return{id:v.id,title:v.snippet?.title,channel:v.snippet?.channelTitle,thumb:v.snippet?.thumbnails?.medium?.url,views,url:"https://youtube.com/watch?v="+v.id,ageDays,vpd:ageDays?Math.round(views/ageDays):0};};
+const fetchViralList=async({apiKey,channelId,q,days=VIRAL_DAYS,max=10})=>{
+  const base="https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&order=viewCount&maxResults="+max+"&key="+apiKey+(channelId?"&channelId="+channelId:"")+(q?"&q="+encodeURIComponent(q):"");
+  const after=new Date(Date.now()-days*86400000).toISOString();
+  let d=await(await fetch(base+"&publishedAfter="+encodeURIComponent(after))).json();
+  let items=d.items||[];
+  if(!items.length){d=await(await fetch(base)).json();items=d.items||[];}
+  const ids=items.map(i=>i.id?.videoId).filter(Boolean).join(",");
+  if(!ids)return[];
+  const sd=await(await fetch("https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id="+ids+"&key="+apiKey)).json();
+  return(sd.items||[]).map(viralMap).sort((a,b)=>b.vpd-a.vpd);
+};
 const toLocalDate=d=>{const dt=new Date(d);return dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");};
 const today=()=>toLocalDate(new Date());
 const thisMonth=()=>new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0");
@@ -476,12 +491,8 @@ export default function DarkApp(){
     if(!apiKey||!ch.channel_id||trendingRefVideos[ch.id])return;
     setTrendingRefLoading(ch.id);
     try{
-      const r=await fetch("https://www.googleapis.com/youtube/v3/search?part=snippet&channelId="+ch.channel_id+"&order=viewCount&maxResults=10&type=video&key="+apiKey);
-      const d=await r.json();const ids=(d.items||[]).map(i=>i.id?.videoId).filter(Boolean).join(",");
-      if(!ids){setTrendingRefLoading(null);return;}
-      const s=await fetch("https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id="+ids+"&key="+apiKey);
-      const sd=await s.json();
-      setTrendingRefVideos(prev=>({...prev,[ch.id]:(sd.items||[]).map(v=>({id:v.id,title:v.snippet?.title,channel:v.snippet?.channelTitle,thumb:v.snippet?.thumbnails?.medium?.url,views:parseInt(v.statistics?.viewCount||0),url:"https://youtube.com/watch?v="+v.id})).sort((a,b)=>b.views-a.views)}));
+      const list=await fetchViralList({apiKey,channelId:ch.channel_id});
+      setTrendingRefVideos(prev=>({...prev,[ch.id]:list}));
     }catch(e){flashError("Erro ao buscar vídeos");}
     setTrendingRefLoading(null);
   };
@@ -493,13 +504,8 @@ export default function DarkApp(){
     if(!apiKey||wRefVideos[theme.name])return;
     setWRefLoading(theme.name);
     try{
-      const r=await fetch("https://www.googleapis.com/youtube/v3/search?part=snippet&q="+encodeURIComponent(theme.kw)+"&type=video&order=viewCount&maxResults=8&key="+apiKey);
-      const d=await r.json();
-      const ids=(d.items||[]).map(i=>i.id?.videoId).filter(Boolean).join(",");
-      if(!ids){setWRefLoading(null);return;}
-      const s=await fetch("https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id="+ids+"&key="+apiKey);
-      const sd=await s.json();
-      setWRefVideos(prev=>({...prev,[theme.name]:(sd.items||[]).map(v=>({id:v.id,title:v.snippet?.title,channel:v.snippet?.channelTitle,thumb:v.snippet?.thumbnails?.medium?.url,views:parseInt(v.statistics?.viewCount||0),url:"https://youtube.com/watch?v="+v.id})).sort((a,b)=>b.views-a.views)}));
+      const list=await fetchViralList({apiKey,q:theme.kw,max:8});
+      setWRefVideos(prev=>({...prev,[theme.name]:list}));
     }catch(e){flashError("Erro ao buscar referências");}
     setWRefLoading(null);
   };
@@ -562,13 +568,8 @@ export default function DarkApp(){
     if(!apiKey||intlRefVideos[niche.name])return;
     setIntlRefLoading(niche.name);
     try{
-      const r=await fetch("https://www.googleapis.com/youtube/v3/search?part=snippet&q="+encodeURIComponent(niche.keyword)+"&type=video&order=viewCount&maxResults=8&key="+apiKey);
-      const d=await r.json();
-      const ids=(d.items||[]).map(i=>i.id?.videoId).filter(Boolean).join(",");
-      if(!ids){setIntlRefLoading(null);return;}
-      const s=await fetch("https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id="+ids+"&key="+apiKey);
-      const sd=await s.json();
-      setIntlRefVideos(prev=>({...prev,[niche.name]:(sd.items||[]).map(v=>({id:v.id,title:v.snippet?.title,channel:v.snippet?.channelTitle,thumb:v.snippet?.thumbnails?.medium?.url,views:parseInt(v.statistics?.viewCount||0),url:"https://youtube.com/watch?v="+v.id})).sort((a,b)=>b.views-a.views)}));
+      const list=await fetchViralList({apiKey,q:niche.keyword,max:8});
+      setIntlRefVideos(prev=>({...prev,[niche.name]:list}));
     }catch(e){flashError("Erro ao buscar referências");}
     setIntlRefLoading(null);
   };
@@ -580,7 +581,8 @@ export default function DarkApp(){
       const prev={...trendingPrev};
       const mapV=v=>({id:v.id,title:v.snippet?.title,channel:v.snippet?.channelTitle,thumb:v.snippet?.thumbnails?.medium?.url,views:parseInt(v.statistics?.viewCount||0),url:"https://youtube.com/watch?v="+v.id,growth:prev[v.id]?Math.round(((parseInt(v.statistics?.viewCount||0)-prev[v.id])/Math.max(1,prev[v.id]))*100):0});
       const fetchRegion=async region=>{const r=await fetch("https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&chart=mostPopular&regionCode="+region+"&maxResults=15&key="+apiKey);const d=await r.json();return(d.items||[]).filter(v=>![10].includes(parseInt(v.snippet?.categoryId))).map(mapV);};
-      const fetchNiche=async kw=>{const r=await fetch("https://www.googleapis.com/youtube/v3/search?part=snippet&q="+encodeURIComponent(kw)+"&type=video&order=viewCount&regionCode=BR&maxResults=8&key="+apiKey);const d=await r.json();const ids=(d.items||[]).map(i=>i.id?.videoId).filter(Boolean).join(",");if(!ids)return[];const s=await fetch("https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id="+ids+"&key="+apiKey);const sd=await s.json();return(sd.items||[]).map(mapV);};
+      const after30=encodeURIComponent(new Date(Date.now()-30*86400000).toISOString());
+      const fetchNiche=async kw=>{let d=await(await fetch("https://www.googleapis.com/youtube/v3/search?part=snippet&q="+encodeURIComponent(kw)+"&type=video&order=viewCount&regionCode=BR&maxResults=8&publishedAfter="+after30+"&key="+apiKey)).json();let items=d.items||[];if(!items.length){d=await(await fetch("https://www.googleapis.com/youtube/v3/search?part=snippet&q="+encodeURIComponent(kw)+"&type=video&order=viewCount&regionCode=BR&maxResults=8&key="+apiKey)).json();items=d.items||[];}const ids=items.map(i=>i.id?.videoId).filter(Boolean).join(",");if(!ids)return[];const s=await fetch("https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id="+ids+"&key="+apiKey);const sd=await s.json();return(sd.items||[]).map(v=>({...mapV(v),...(()=>{const pub=v.snippet?.publishedAt?new Date(v.snippet.publishedAt):null;const ageDays=pub?Math.max(1,Math.round((Date.now()-pub)/86400000)):null;const views=parseInt(v.statistics?.viewCount||0);return{ageDays,vpd:ageDays?Math.round(views/ageDays):0};})()})).sort((a,b)=>b.vpd-a.vpd);};
       const[br,gl,...nr]=await Promise.all([fetchRegion("BR"),fetchRegion("US"),...activeNiches.map(n=>fetchNiche(n.keyword||n.name))]);
       const newPrev={};[...br,...gl,...nr.flat()].forEach(v=>{newPrev[v.id]=v.views;});
       setTrendingPrev(newPrev);
@@ -597,12 +599,8 @@ export default function DarkApp(){
     if(!apiKey||!ch.channel_id||channelVideos[ch.id])return;
     setChannelLoading(ch.id);
     try{
-      const r=await fetch("https://www.googleapis.com/youtube/v3/search?part=snippet&channelId="+ch.channel_id+"&order=viewCount&maxResults=10&type=video&key="+apiKey);
-      const d=await r.json();const ids=(d.items||[]).map(i=>i.id?.videoId).filter(Boolean).join(",");
-      if(!ids){setChannelLoading(null);return;}
-      const s=await fetch("https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id="+ids+"&key="+apiKey);
-      const sd=await s.json();
-      setChannelVideos(prev=>({...prev,[ch.id]:(sd.items||[]).map(v=>({id:v.id,title:v.snippet?.title,channel:v.snippet?.channelTitle,thumb:v.snippet?.thumbnails?.medium?.url,views:parseInt(v.statistics?.viewCount||0),url:"https://youtube.com/watch?v="+v.id})).sort((a,b)=>b.views-a.views)}));
+      const list=await fetchViralList({apiKey,channelId:ch.channel_id});
+      setChannelVideos(prev=>({...prev,[ch.id]:list}));
     }catch(e){flashError("Erro ao buscar vídeos");}
     setChannelLoading(null);
   };
@@ -821,7 +819,7 @@ export default function DarkApp(){
                           {v.thumb&&<img src={v.thumb} alt="" style={{width:44,height:32,borderRadius:3,objectFit:"cover",flexShrink:0}}/>}
                           <div style={{flex:1,minWidth:0}}>
                             <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:11,fontWeight:500,color:TEXT,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.title}</a>
-                            <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.views?.toLocaleString("pt-BR")} views</div>
+                            <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.views?.toLocaleString("pt-BR")} views{v.vpd>0?" · 🔥"+v.vpd.toLocaleString("pt-BR")+"/dia · "+v.ageDays+"d":""}</div>
                           </div>
                           {v.growth>50&&<span style={{background:RED+"20",color:RED,borderRadius:3,padding:"1px 5px",fontSize:9,fontWeight:600,flexShrink:0}}>🚀+{v.growth}%</span>}
                           <button onClick={()=>saveQuickIdea(v.title)} style={{...btnGhost,padding:"1px 5px",fontSize:9,color:GREEN,borderColor:GREEN+"33",flexShrink:0}}>+</button>
@@ -842,7 +840,7 @@ export default function DarkApp(){
                           {v.thumb&&<img src={v.thumb} alt="" style={{width:44,height:32,borderRadius:3,objectFit:"cover",flexShrink:0}}/>}
                           <div style={{flex:1,minWidth:0}}>
                             <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:11,fontWeight:500,color:TEXT,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.title}</a>
-                            <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.views?.toLocaleString("pt-BR")} views</div>
+                            <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.views?.toLocaleString("pt-BR")} views{v.vpd>0?" · 🔥"+v.vpd.toLocaleString("pt-BR")+"/dia · "+v.ageDays+"d":""}</div>
                           </div>
                           <button onClick={()=>saveQuickIdea(v.title)} style={{...btnGhost,padding:"1px 5px",fontSize:9,color:GREEN,borderColor:GREEN+"33",flexShrink:0}}>+</button>
                         </div>
@@ -1150,7 +1148,7 @@ export default function DarkApp(){
                                 {v.thumb&&<img src={v.thumb} alt="" style={{width:40,height:28,borderRadius:2,objectFit:"cover",flexShrink:0}}/>}
                                 <div style={{flex:1,minWidth:0}}>
                                   <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:10,color:TEXT,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.title}</a>
-                                  <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.views?.toLocaleString("pt-BR")} views</div>
+                                  <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.views?.toLocaleString("pt-BR")} views{v.vpd>0?" · 🔥"+v.vpd.toLocaleString("pt-BR")+"/dia · "+v.ageDays+"d":""}</div>
                                 </div>
                                 <div style={{display:"flex",gap:3,flexShrink:0}}>
                                   <button onClick={()=>saveQuickIdea(v.title)} style={{...btnGhost,padding:"1px 4px",fontSize:9,color:GREEN,borderColor:GREEN+"33"}}>+</button>
@@ -1192,13 +1190,13 @@ export default function DarkApp(){
                               </div>
                             </div>
                             {ch.notes&&<div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,marginBottom:7,lineHeight:1.5}}>{ch.notes}</div>}
-                            <button onClick={()=>fetchChannelVideos(ch)} disabled={!!channelLoading} style={{...btnGhost,width:"100%",fontSize:11,color:ACCENT,borderColor:ACCENT+"33",opacity:channelLoading===ch.id?.5:1}}>{channelLoading===ch.id?"Carregando...":channelVideos[ch.id]?"✓ "+channelVideos[ch.id].length+" vídeos":"▶ Carregar top 10"}</button>
+                            <button onClick={()=>fetchChannelVideos(ch)} disabled={!!channelLoading} style={{...btnGhost,width:"100%",fontSize:11,color:ACCENT,borderColor:ACCENT+"33",opacity:channelLoading===ch.id?.5:1}}>{channelLoading===ch.id?"Carregando...":channelVideos[ch.id]?"✓ "+channelVideos[ch.id].length+" vídeos":"🔥 Carregar virais"}</button>
                             {channelVideos[ch.id]&&channelVideos[ch.id].slice(0,5).map((v,i)=>(
                               <div key={v.id} style={{display:"flex",gap:7,padding:"5px 0",borderTop:"1px solid "+BOR,alignItems:"center",marginTop:4}}>
                                 <span style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:HINT,width:14}}>{i+1}</span>
                                 <div style={{flex:1,minWidth:0}}>
                                   <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:11,color:TEXT,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.title}</a>
-                                  <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.views?.toLocaleString("pt-BR")} views</div>
+                                  <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.views?.toLocaleString("pt-BR")} views{v.vpd>0?" · 🔥"+v.vpd.toLocaleString("pt-BR")+"/dia · "+v.ageDays+"d":""}</div>
                                 </div>
                                 <button onClick={()=>setUseAsBaseModal({...v,niche:n.name})} style={{...btnGhost,padding:"1px 5px",fontSize:9,color:ACCENT,borderColor:ACCENT+"33",flexShrink:0}}>base</button>
                               </div>
@@ -1322,7 +1320,7 @@ export default function DarkApp(){
                           {v.thumb&&<img src={v.thumb} alt="" style={{width:48,height:34,borderRadius:3,objectFit:"cover",flexShrink:0}}/>}
                           <div style={{flex:1,minWidth:0}}>
                             <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:11,fontWeight:500,color:TEXT,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.title}</a>
-                            <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.channel} · {v.views?.toLocaleString("pt-BR")} views</div>
+                            <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.channel} · {v.views?.toLocaleString("pt-BR")} views{v.vpd>0?" · 🔥"+v.vpd.toLocaleString("pt-BR")+"/dia · "+v.ageDays+"d":""}</div>
                           </div>
                           <div style={{display:"flex",gap:3,flexShrink:0}}>
                             <button onClick={()=>saveWaldeIdea(v.title,theme.name)} style={{...btnGhost,padding:"1px 5px",fontSize:9,color:GREEN,borderColor:GREEN+"33"}}>+ideia</button>
@@ -1505,7 +1503,7 @@ export default function DarkApp(){
                           {v.thumb&&<img src={v.thumb} alt="" style={{width:52,height:37,borderRadius:3,objectFit:"cover",flexShrink:0}}/>}
                           <div style={{flex:1,minWidth:0}}>
                             <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:11,fontWeight:500,color:TEXT,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.title}</a>
-                            <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.channel} · {v.views?.toLocaleString("pt-BR")} views</div>
+                            <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.channel} · {v.views?.toLocaleString("pt-BR")} views{v.vpd>0?" · 🔥"+v.vpd.toLocaleString("pt-BR")+"/dia · "+v.ageDays+"d":""}</div>
                           </div>
                           <div style={{display:"flex",gap:3,flexShrink:0}}>
                             <button onClick={()=>saveIntlIdea(v.title,activeChannel)} style={{...btnGhost,padding:"1px 5px",fontSize:9,color:GREEN,borderColor:GREEN+"33"}}>+ideia</button>
@@ -1887,7 +1885,7 @@ export default function DarkApp(){
               if(trendingTab==="canais_ref") return(
                 <div>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-                    <div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED}}>Adicione canais e busque os vídeos mais vistos de cada um.</div>
+                    <div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED}}>Adicione canais e busque o que está viralizando em cada um — últimos 90 dias, ranqueado por views/dia.</div>
                     <button onClick={()=>{setTrendingRefEdit({name:"",channel_id:"",url:"",notes:""});setTrendingRefModal(true);}} style={btnGold}>+ CANAL</button>
                   </div>
                   {trendingRefChannels.length===0&&(
@@ -1917,7 +1915,7 @@ export default function DarkApp(){
                             {v.thumb&&<img src={v.thumb} alt="" style={{width:56,height:40,borderRadius:3,objectFit:"cover",flexShrink:0}}/>}
                             <div style={{flex:1,minWidth:0}}>
                               <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:500,color:TEXT,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.title}</a>
-                              <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.views?.toLocaleString("pt-BR")} views</div>
+                              <div style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:MUTED}}>{v.views?.toLocaleString("pt-BR")} views{v.vpd>0?" · 🔥"+v.vpd.toLocaleString("pt-BR")+"/dia · "+v.ageDays+"d":""}</div>
                             </div>
                             <div style={{display:"flex",gap:4,flexShrink:0}}>
                               <button onClick={()=>saveQuickIdea(v.title)} style={{...btnGhost,padding:"1px 6px",fontSize:9,color:GREEN,borderColor:GREEN+"33"}}>+ideia</button>
@@ -1950,7 +1948,7 @@ export default function DarkApp(){
                           {v.thumb&&<img src={v.thumb} alt="" style={{width:56,height:40,borderRadius:3,objectFit:"cover",flexShrink:0}}/>}
                           <div style={{flex:1,minWidth:0}}>
                             <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:13,fontWeight:600,color:TEXT,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.title}</a>
-                            <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{v.channel} · {v.views?.toLocaleString("pt-BR")} views</div>
+                            <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{v.channel} · {v.views?.toLocaleString("pt-BR")} views{v.vpd>0?" · 🔥"+v.vpd.toLocaleString("pt-BR")+"/dia · "+v.ageDays+"d":""}</div>
                           </div>
                           <span style={{background:RED+"20",color:RED,borderRadius:4,padding:"2px 7px",fontFamily:"'IBM Plex Mono'",fontSize:11,fontWeight:600,flexShrink:0}}>🚀 +{v.growth}%</span>
                           <div style={{display:"flex",gap:5,flexShrink:0}}>
@@ -1968,7 +1966,7 @@ export default function DarkApp(){
                         {v.thumb&&<img src={v.thumb} alt="" style={{width:76,height:56,borderRadius:5,objectFit:"cover",flexShrink:0}}/>}
                         <div style={{flex:1,minWidth:0}}>
                           <a href={v.url} target="_blank" rel="noreferrer" style={{fontFamily:"'DM Sans'",fontSize:13,fontWeight:600,color:TEXT,textDecoration:"none",display:"block",lineHeight:1.4,marginBottom:4}}>{v.title}</a>
-                          <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,marginBottom:5}}>{v.channel} · {v.views?.toLocaleString("pt-BR")} views</div>
+                          <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,marginBottom:5}}>{v.channel} · {v.views?.toLocaleString("pt-BR")} views{v.vpd>0?" · 🔥"+v.vpd.toLocaleString("pt-BR")+"/dia · "+v.ageDays+"d":""}</div>
                           {v.growth>0&&<span style={{background:(v.growth>50?RED:v.growth>20?ACCENT:GREEN)+"20",color:v.growth>50?RED:v.growth>20?ACCENT:GREEN,borderRadius:4,padding:"1px 5px",fontSize:10,fontWeight:600,display:"inline-block",marginBottom:5}}>🚀 +{v.growth}%</span>}
                           <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
                             <button onClick={()=>saveQuickIdea(v.title)} style={{...btnGhost,padding:"2px 7px",fontSize:10,color:GREEN,borderColor:GREEN+"33"}}>+ ideia</button>
