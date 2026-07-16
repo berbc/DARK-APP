@@ -13,8 +13,8 @@ const btnGold={background:ACCENT,color:"#111",border:"none",borderRadius:6,paddi
 const btnGhost={background:"transparent",color:MUTED,border:"1px solid "+BOR,borderRadius:6,padding:"8px 18px",cursor:"pointer",fontFamily:"'DM Sans'",fontSize:13};
 
 const TABS=["🏠 Dashboard","⚡ Focus OS","🎯 Metas","📅 Agenda","🎬 Canais Dark","⭐ Sr. Waldemar","🌍 Int'l Channels","◈ Clientes","💰 Finanças","📚 Biblioteca","🔥 Trending"];
-const PIPELINE=["Roteiro","Storyboard","Character Sheets & Cenários","Geração de Imagens","Edição","Thumbnail & Título","Postagem"];
-const PIPELINE_COLORS={"Roteiro":ACCENT,"Storyboard":BLUE,"Character Sheets & Cenários":CYAN,"Geração de Imagens":PURP,"Edição":RED,"Thumbnail & Título":ORANGE,"Postagem":GREEN};
+const PIPELINE=["Roteiro","Character Sheets & Cenários","Storyboard","Geração de Imagens","Edição","Thumbnail & Título","Postagem"];
+const PIPELINE_COLORS={"Roteiro":ACCENT,"Character Sheets & Cenários":CYAN,"Storyboard":BLUE,"Geração de Imagens":PURP,"Edição":RED,"Thumbnail & Título":ORANGE,"Postagem":GREEN};
 const TASK_TYPES=["Roteiro","Gravação","Edição","Thumbnail","Revisão","Upload","Reunião","Pesquisa","Postagem"];
 const SCRIPT_SECTIONS=["GANCHO","CONSTRUÇÃO","A VIRADA","DESENVOLVIMENTO","DESFECHO","CTA"];
 const SECTION_COLORS={"GANCHO":"#F59E0B","CONSTRUÇÃO":ACCENT,"A VIRADA":BLUE,"DESENVOLVIMENTO":PURP,"DESFECHO":GREEN,"CTA":TEXT};
