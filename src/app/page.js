@@ -5,7 +5,7 @@ import { supabase } from "../lib/supabase";
 const BG="#1C1C1E",BG2="#232325",BG3="#2A2A2D",CARD="#2C2C2F";
 const BOR="rgba(255,255,255,0.09)",BOR2="rgba(255,255,255,0.16)";
 const TEXT="#F5F5F5",MUTED="#8A8A8E",HINT="#4A4A4E";
-const ACCENT="#FBBF24",GREEN="#10B981",RED="#EF4444",BLUE="#60A5FA",PURP="#8B5CF6",ORANGE="#FB923C";
+const ACCENT="#FBBF24",GREEN="#10B981",RED="#EF4444",BLUE="#60A5FA",PURP="#8B5CF6",ORANGE="#FB923C",CYAN="#22D3EE";
 const card={background:CARD,border:"1px solid "+BOR,borderRadius:10,padding:18,marginBottom:10};
 const lbl={color:MUTED,fontSize:11,letterSpacing:1,textTransform:"uppercase",marginBottom:6,fontFamily:"'DM Sans'",display:"block"};
 const inp={background:BG3,border:"1px solid "+BOR,borderRadius:6,color:TEXT,padding:"8px 12px",fontFamily:"'DM Sans'",fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"};
@@ -13,14 +13,14 @@ const btnGold={background:ACCENT,color:"#111",border:"none",borderRadius:6,paddi
 const btnGhost={background:"transparent",color:MUTED,border:"1px solid "+BOR,borderRadius:6,padding:"8px 18px",cursor:"pointer",fontFamily:"'DM Sans'",fontSize:13};
 
 const TABS=["🏠 Dashboard","⚡ Focus OS","🎯 Metas","📅 Agenda","🎬 Canais Dark","⭐ Sr. Waldemar","🌍 Int'l Channels","◈ Clientes","💰 Finanças","📚 Biblioteca","🔥 Trending"];
-const PIPELINE=["Roteiro","Locução","Geração de Imagens","Edição","Thumb e Título","Postagem"];
-const PIPELINE_COLORS={"Roteiro":ACCENT,"Locução":BLUE,"Geração de Imagens":PURP,"Edição":RED,"Thumb e Título":ORANGE,"Postagem":GREEN};
+const PIPELINE=["Roteiro","Storyboard","Character Sheets & Cenários","Geração de Imagens","Edição","Thumbnail & Título","Postagem"];
+const PIPELINE_COLORS={"Roteiro":ACCENT,"Storyboard":BLUE,"Character Sheets & Cenários":CYAN,"Geração de Imagens":PURP,"Edição":RED,"Thumbnail & Título":ORANGE,"Postagem":GREEN};
 const TASK_TYPES=["Roteiro","Gravação","Edição","Thumbnail","Revisão","Upload","Reunião","Pesquisa","Postagem"];
 const SCRIPT_SECTIONS=["GANCHO","CONSTRUÇÃO","A VIRADA","DESENVOLVIMENTO","DESFECHO","CTA"];
 const SECTION_COLORS={"GANCHO":"#F59E0B","CONSTRUÇÃO":ACCENT,"A VIRADA":BLUE,"DESENVOLVIMENTO":PURP,"DESFECHO":GREEN,"CTA":TEXT};
 const GOAL_TYPE_LABELS={"videos_mes":"Vídeos/mês","seguidores":"Seguidores (YT)","adsense_mes":"AdSense/mês","faturamento_mes":"Faturamento/mês","clientes":"Nº de clientes","views_mes":"Views/mês (YT)","personalizada":"Personalizada"};
 const YT_BENCH={cpm_br:8,views_per_video:5000,subs_per_1k:0.8};
-const DEFAULT_NICHES=[{name:"Curiosidades Gerais",keyword:"curiosidades fatos incríveis",cpm:"$4–8",active:true},{name:"Psicologia & Comportamento",keyword:"psicologia comportamento humano",cpm:"$8–15",active:true},{name:"Mistério & Paranormal",keyword:"misterio paranormal sobrenatural",cpm:"$5–9",active:true},{name:"True Crime",keyword:"crime real investigação",cpm:"$6–11",active:true},{name:"História Sombria",keyword:"historia sombria chocante",cpm:"$7–13",active:true},{name:"Ciência Sombria",keyword:"ciencia sombria experimentos",cpm:"$8–14",active:true},{name:"Filosofia Existencial",keyword:"filosofia existencial vida",cpm:"$10–18",active:true},{name:"Lendas Urbanas BR",keyword:"lendas urbanas brasil",cpm:"$4–7",active:true}];
+const DEFAULT_NICHES=[{name:"Curiosidades Gerais",keyword:"curiosidades fatos incríveis",cpm:"$4–8",active:true},{name:"Psicologia & Comportamento",keyword:"psicologia comportamento humano",cpm:"$8–15",active:true},{name:"Mistério & Paranormal",keyword:"misterio paranormal sobrenatural",cpm:"$5–9",active:true},{name:"True Crime",keyword:"crime real investigação",cpm:"$6–11",active:true},{name:"História Sombria",keyword:"historia sombria chocante",cpm:"$7–13",active:true},{name:"Ciência Sombria",keyword:"ciencia sombria experimentos",cpm:"$8–14",active:true},{name:"Filosofia Existencial",keyword:"filosofia existencial vida",cpm:"$10–18",active:true},{name:"Lendas Urbanas BR",keyword:"lendas urbanas brasil",cpm:"$4–7",active:true},{name:"Rise and Fall",keyword:"rise and fall company bankruptcy collapse business",cpm:"$8–19",active:true},{name:"Explainer",keyword:"how it works explained explainer science",cpm:"$6–16",active:true}];
 const FLAMENGO_CATEGORIES=[{name:"História",icon:"📜",color:RED},{name:"Jogadores Lendários",icon:"⚽",color:ACCENT},{name:"Partidas Históricas",icon:"🏆",color:GREEN},{name:"Mascote & Símbolos",icon:"🦅",color:ORANGE},{name:"Fundação & Origem",icon:"🏛",color:BLUE},{name:"Rivalidades",icon:"🔥",color:RED},{name:"Títulos",icon:"🥇",color:ACCENT},{name:"Curiosidades",icon:"💡",color:PURP}];
 const IDEA_SEEDS=[{title:"A história secreta da fundação do Flamengo em 1895",category:"Fundação & Origem"},{title:"Zico: o maior jogador da história do Flamengo",category:"Jogadores Lendários"},{title:"A maior goleada da história do Flamengo",category:"Partidas Históricas"},{title:"O Urubu: a história do mascote mais famoso do Brasil",category:"Mascote & Símbolos"},{title:"Flamengo x Fluminense: a maior rivalidade do Rio",category:"Rivalidades"},{title:"Libertadores 2019: a noite que parou o Brasil",category:"Títulos"},{title:"Por que o Flamengo tem mais torcedores que qualquer time do mundo?",category:"Curiosidades"},{title:"Adriano Imperador: ascensão e queda de um gênio",category:"Jogadores Lendários"},{title:"A história da Gávea: o CT mais famoso do futebol brasileiro",category:"História"},{title:"Gabigol: o herói que virou lenda em uma noite",category:"Jogadores Lendários"}];
 
@@ -332,7 +332,7 @@ export default function DarkApp(){
   };
   const saveVideoDetail=async vd=>{
     if(!vd?.id)return;
-    const{data}=await supabase.from("videos").update({title:vd.title,niche:vd.niche,status:vd.status,publish_date:vd.publish_date||null,platforms:vd.platforms||[],meu_titulo:vd.meu_titulo||"",minha_thumbnail:vd.minha_thumbnail||"",transcricao:vd.transcricao||"",meu_roteiro:vd.meu_roteiro||"",descricao_yt:vd.descricao_yt||"",hook:vd.hook||"",notes:vd.notes||"",escopo:vd.escopo||"",ref_titulo:vd.ref_titulo||"",ref_thumb:vd.ref_thumb||"",ref_url:vd.ref_url||"",ref_canal:vd.ref_canal||"",ref_views:vd.ref_views||0,ref_link_manual:vd.ref_link_manual||"",short_script:vd.short_script||"",short_status:vd.short_status||"pendente",short_platforms:vd.short_platforms||[]}).eq("id",vd.id).select().single();
+    const{data}=await supabase.from("videos").update({title:vd.title,niche:vd.niche,status:vd.status,publish_date:vd.publish_date||null,platforms:vd.platforms||[],meu_titulo:vd.meu_titulo||"",minha_thumbnail:vd.minha_thumbnail||"",transcricao:vd.transcricao||"",meu_roteiro:vd.meu_roteiro||"",descricao_yt:vd.descricao_yt||"",hook:vd.hook||"",notes:vd.notes||"",escopo:vd.escopo||"",ref_titulo:vd.ref_titulo||"",ref_thumb:vd.ref_thumb||"",ref_url:vd.ref_url||"",ref_canal:vd.ref_canal||"",ref_views:vd.ref_views||0,ref_link_manual:vd.ref_link_manual||"",short_script:vd.short_script||"",short_status:vd.short_status||"pendente",short_platforms:vd.short_platforms||[],storyboard_url:vd.storyboard_url||"",character_sheets:vd.character_sheets||"",cenarios:vd.cenarios||""}).eq("id",vd.id).select().single();
     if(data){setVideos(prev=>prev.map(v=>v.id===data.id?data:v));setVideoDetailModal(data);flash();}
   };
   const createVideo=async initial=>{
@@ -2176,6 +2176,16 @@ export default function DarkApp(){
               <div style={lbl}>📝 Roteiro</div>
               <div style={{marginBottom:12}}><div style={{...lbl,fontSize:10}}>Hook (abertura)</div><input value={videoDetailModal.hook||""} onChange={e=>setVideoDetailModal({...videoDetailModal,hook:e.target.value})} placeholder="Em 1999, Joan Murray saltou de um avião..." style={inp}/></div>
               <div><div style={{...lbl,fontSize:10}}>Roteiro completo <span style={{color:HINT,fontSize:9,textTransform:"none"}}>[STOCK] [IMG-AI] [ANIM]</span></div><textarea value={videoDetailModal.meu_roteiro||""} onChange={e=>setVideoDetailModal({...videoDetailModal,meu_roteiro:e.target.value})} placeholder="Use [STOCK] para footage, [IMG-AI] para imagem estática, [ANIM] para animação..." style={{...inp,minHeight:180}}/></div>
+            </div>
+
+            {/* Storyboard & Assets */}
+            <div style={{marginBottom:18,borderTop:"1px solid "+BOR,paddingTop:16,background:CYAN+"08",borderRadius:8,padding:16,marginTop:16}}>
+              <div style={{...lbl,color:CYAN}}>🎬 Storyboard & Assets <span style={{color:HINT,fontSize:9,textTransform:"none",fontFamily:"'DM Sans'",letterSpacing:0}}>o still trava o estilo e vira a âncora do Seedance</span></div>
+              <div style={{marginBottom:12}}><div style={{...lbl,fontSize:10}}>Link do storyboard (folha macro)</div><input value={videoDetailModal.storyboard_url||""} onChange={e=>setVideoDetailModal({...videoDetailModal,storyboard_url:e.target.value})} placeholder="https://drive.google.com/... (folha com 1 painel por cena)" style={inp}/></div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div><div style={{...lbl,fontSize:10}}>Character sheets</div><textarea value={videoDetailModal.character_sheets||""} onChange={e=>setVideoDetailModal({...videoDetailModal,character_sheets:e.target.value})} placeholder="Personagens travados (links / IDs de referência)" style={{...inp,minHeight:70}}/></div>
+                <div><div style={{...lbl,fontSize:10}}>Cenários (locations)</div><textarea value={videoDetailModal.cenarios||""} onChange={e=>setVideoDetailModal({...videoDetailModal,cenarios:e.target.value})} placeholder="Cenários-âncora travados (links / IDs)" style={{...inp,minHeight:70}}/></div>
+              </div>
             </div>
 
             {/* Short/Reel */}
