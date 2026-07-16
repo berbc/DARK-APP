@@ -1,8 +1,38 @@
 -- ============================================================
--- SEED: Metas (curto / médio / longo prazo) — do nosso planejamento
--- Roda no SQL Editor do Supabase. Idempotente (não duplica se rodar 2x).
--- Depois é só abrir a aba "🎯 Metas" no app. Você pode editar/apagar cada uma lá.
+-- Metas: conserta a tabela `goals` + semeia as metas do planejamento
+-- Roda no SQL Editor do Supabase. Idempotente (pode rodar 2x sem duplicar).
+--
+-- POR QUE A PARTE 1 EXISTE: a tabela `goals` foi migrada pela metade — o app
+-- (saveGoal) grava `notes`, `youtube_channel_id` e lê `completed`, mas essas
+-- colunas não existiam no banco. Resultado: criar meta pela tela do app quebrava
+-- com "column notes of relation goals does not exist". A parte 1 conserta isso.
 -- ============================================================
+
+-- 1) GARANTE AS COLUNAS QUE O APP USA -------------------------
+-- `add column if not exists` só cria o que estiver faltando; não mexe no resto.
+alter table goals add column if not exists title              text;
+alter table goals add column if not exists type               text    default 'personalizada';
+alter table goals add column if not exists horizon            text    default 'curto';
+alter table goals add column if not exists target_value       numeric default 0;
+alter table goals add column if not exists current_value      numeric default 0;
+alter table goals add column if not exists target_date        date;
+alter table goals add column if not exists notes              text    default '';
+alter table goals add column if not exists youtube_channel_id text;
+alter table goals add column if not exists completed          boolean default false;
+
+-- A coluna antiga `month` era NOT NULL sem default (schema legado). Se ainda
+-- existir, tira a obrigatoriedade — senão qualquer insert novo falha.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'goals' and column_name = 'month'
+  ) then
+    execute 'alter table goals alter column month drop not null';
+  end if;
+end $$;
+
+-- 2) SEED — metas do planejamento -----------------------------
 
 -- CURTO PRAZO (agora → set/2026): tirar do zero e manter cadência
 insert into goals (title, type, horizon, target_value, current_value, target_date, notes)
