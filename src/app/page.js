@@ -166,6 +166,7 @@ export default function DarkApp(){
   const [intlRefVideos,setIntlRefVideos]=useState({});
   const [intlRefLoading,setIntlRefLoading]=useState(null);
   const trendingAutoRef=useRef(null);
+  const trendingStateRef=useRef({});
 
   const flash=()=>{setSaved(true);setTimeout(()=>setSaved(false),2000);};
   const flashError=m=>{setErrorMsg(m);setTimeout(()=>setErrorMsg(""),4000);};
@@ -217,7 +218,17 @@ export default function DarkApp(){
         supabase.from("time_entries").select("*").order("started_at",{ascending:false}),
         supabase.from("niches").select("*").order("sort_order,name"),
       ]);
-      if(cl.data){const seen=new Set();setClients(cl.data.filter(c=>{if(seen.has(c.name))return false;seen.add(c.name);return true;}));}
+      if(cl.data){
+        const seen=new Set();const list=cl.data.filter(c=>{if(seen.has(c.name))return false;seen.add(c.name);return true;});
+        // clientes-sistema: as abas Waldemar/Dark/Int'l dependem deles pra atribuir dono ao vídeo
+        const required=[
+          {name:"Sr. Waldemar",color:"#FBBF24",type:"AI Entertainment"},
+          {name:"Canais Dark",color:"#34D399",type:"YouTube Faceless"},
+          ...INTL_CHANNELS.map(ch=>({name:ch.name,color:ch.color,type:"YouTube "+ch.lang})),
+        ].filter(rc=>!list.find(c=>c.name===rc.name));
+        if(required.length){const{data:added}=await supabase.from("clients").insert(required.map(m=>({...m,frequency:"",rate_per_hour:0,active:true}))).select();if(added)list.push(...added);}
+        setClients(list);
+      }
       if(tk.data)setTasks(tk.data);
       if(vi.data)setVideos(vi.data);
       if(id.data)setIdeas(id.data);
@@ -245,7 +256,7 @@ export default function DarkApp(){
 
   // Auto-trending: update every 15min regardless of active tab, and on app load
   useEffect(()=>{
-    const check=()=>{const apiKey=process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;if(!apiKey)return;const mins=lastUpdated?Math.round((new Date()-lastUpdated)/60000):999;if(mins>=15&&!trendingLoading)fetchTrending();};
+    const check=()=>{const apiKey=process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;if(!apiKey)return;const{lastUpdated:lu,trendingLoading:tl,fetchTrending:ft}=trendingStateRef.current;const mins=lu?Math.round((new Date()-lu)/60000):999;if(mins>=15&&!tl&&ft)ft();};
     check(); // fetch on mount
     trendingAutoRef.current=setInterval(check,15*60*1000);
     return()=>clearInterval(trendingAutoRef.current);
@@ -313,7 +324,7 @@ export default function DarkApp(){
     else{const r=await supabase.from("tasks").insert(taskEdit).select().single();if(r.data)setTasks(prev=>[r.data,...prev]);}
     setTaskModal(false);setTaskEdit(null);flash();
   };
-  const deleteTask=async id=>{await supabase.from("tasks").delete().eq("id",id);setTasks(prev=>prev.filter(t=>t.id!==id));};
+  const deleteTask=async id=>{if(!confirm("Excluir tarefa?"))return;await supabase.from("tasks").delete().eq("id",id);setTasks(prev=>prev.filter(t=>t.id!==id));};
   const duplicateTask=async t=>{const{id,created_at,done_at,...rest}=t;const{data}=await supabase.from("tasks").insert({...rest,done:false,title:rest.title+" (cópia)"}).select().single();if(data)setTasks(prev=>[...prev,data]);flash();};
   const saveClient=async()=>{
     if(!clientEdit?.name?.trim())return;
@@ -355,7 +366,7 @@ export default function DarkApp(){
     else{const r=await supabase.from("invoices").insert(invoiceEdit).select().single();if(r.data)setInvoices(prev=>[...prev,r.data]);}
     setInvoiceModal(false);setInvoiceEdit(null);flash();
   };
-  const deleteInvoice=async id=>{await supabase.from("invoices").delete().eq("id",id);setInvoices(prev=>prev.filter(i=>i.id!==id));};
+  const deleteInvoice=async id=>{if(!confirm("Excluir nota fiscal?"))return;await supabase.from("invoices").delete().eq("id",id);setInvoices(prev=>prev.filter(i=>i.id!==id));};
   const markInvoicePaid=async id=>{const{data}=await supabase.from("invoices").update({status:"pago",paid_date:today()}).eq("id",id).select().single();if(data)setInvoices(prev=>prev.map(i=>i.id===data.id?data:i));flash();};
   const duplicateInvoice=inv=>{const{id,created_at,paid_date,...rest}=inv;setInvoiceEdit({...rest,status:"pendente",issued_date:today(),due_date:today(),number:(rest.number||"")+" (cópia)"});setInvoiceModal(true);};
   const saveLib=async()=>{
@@ -372,7 +383,7 @@ export default function DarkApp(){
     else{const r=await supabase.from("goals").insert(payload).select().single();if(r.data)setGoals(prev=>[r.data,...prev]);}
     setGoalModal(false);setGoalEdit(null);flash();
   };
-  const deleteGoal=async id=>{await supabase.from("goals").delete().eq("id",id);setGoals(prev=>prev.filter(g=>g.id!==id));};
+  const deleteGoal=async id=>{if(!confirm("Excluir meta?"))return;await supabase.from("goals").delete().eq("id",id);setGoals(prev=>prev.filter(g=>g.id!==id));};
   const updateGoalProgress=async(id,val)=>{const{data}=await supabase.from("goals").update({current_value:val}).eq("id",id).select().single();if(data)setGoals(prev=>prev.map(g=>g.id===data.id?data:g));flash();};
   const syncGoalFromYouTube=async(goal)=>{
     const apiKey=process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
@@ -410,11 +421,11 @@ export default function DarkApp(){
     else{const r=await supabase.from("ideas").insert(ideaEdit).select().single();if(r.data)setIdeas(prev=>[r.data,...prev]);}
     setIdeaModal(false);setIdeaEdit(null);flash();
   };
-  const saveIdea=async(title,opts={})=>{const{data}=await supabase.from("ideas").insert({title,source:opts.source||"quick",niche:opts.niche||"",description:opts.description||""}).select().single();if(data)setIdeas(prev=>[data,...prev]);flash();};
+  const saveIdea=async(title,opts={})=>{const{data}=await supabase.from("ideas").insert({title,source:opts.source||"quick",niche:opts.niche||"",description:opts.description||"",client_id:opts.client_id||null}).select().single();if(data)setIdeas(prev=>[data,...prev]);flash();};
   const saveQuickIdea=async title=>saveIdea(title);
   const saveWaldeIdea=async(title,category)=>{const _wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;return saveIdea(title,{source:"waldemar",niche:"Sr. Waldemar",client_id:_wc,description:category||""});};
   const createWaldeVideo=async initial=>{const _wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;const{data}=await supabase.from("videos").insert({title:initial?.title||"Novo Vídeo",niche:"Sr. Waldemar",status:"Roteiro",client_id:_wc,...(initial||{})}).select().single();if(data){setVideos(prev=>[data,...prev]);setVideoDetailModal(data);}};
-  const useWaldeIdeaAsVideo=async idea=>{const _wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;const{data}=await supabase.from("videos").insert({title:idea.title,niche:"Sr. Waldemar",status:"Roteiro",client_id:_wc,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
+  const useWaldeIdeaAsVideo=async idea=>{const _wc=clients.find(c=>c.name==="Sr. Waldemar")?.id;const{data}=await supabase.from("videos").insert({title:idea.title,niche:"Sr. Waldemar",status:"Roteiro",client_id:_wc||null,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setWSection("pipeline");setVideoDetailModal(data);flash();}};
   const deleteIdea=async id=>{await supabase.from("ideas").delete().eq("id",id);setIdeas(prev=>prev.filter(i=>i.id!==id));};
   const restoreIdea=async id=>{const{data}=await supabase.from("ideas").update({used:false}).eq("id",id).select().single();if(data)setIdeas(prev=>prev.map(i=>i.id===data.id?data:i));flash();};
   const useIdeaAsVideo=async idea=>{const{data}=await supabase.from("videos").insert({title:idea.title,niche:idea.niche||activeNiches[0]?.name||"Curiosidades",status:"Roteiro",client_id:darkClientId,notes:idea.description||""}).select().single();if(data){setVideos(prev=>[data,...prev]);await supabase.from("ideas").update({used:true}).eq("id",idea.id);setIdeas(prev=>prev.map(i=>i.id===idea.id?{...i,used:true}:i));setVideoDetailModal(data);flash();}};
@@ -579,6 +590,7 @@ export default function DarkApp(){
     }catch(e){flashError("Erro ao buscar trending");}
     setTrendingLoading(false);
   },[trendingPrev,activeNiches]);// eslint-disable-line
+  trendingStateRef.current={lastUpdated,trendingLoading,fetchTrending};
 
   const fetchChannelVideos=async ch=>{
     const apiKey=process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
@@ -636,16 +648,20 @@ export default function DarkApp(){
   // ─── RENDER ───────────────────────────────────────────────
   const urgentToday=pendingTasks.filter(t=>t.urgency==="hot"||deadlineDiff(t.deadline)<=0);
   const nextTask=pendingTasks[0];
-  const stuckVideos=videos.filter(v=>v.status!=="Postagem").sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).slice(0,3);
   const topGoals=activeGoals.slice(0,3).map(g=>({...g,plan:calcGoalPlan(g)}));
   const weekTasks=pendingTasks.filter(t=>t.deadline&&deadlineDiff(t.deadline)<=7&&deadlineDiff(t.deadline)>0);
   const thisMonthKey=thisMonth();
   const waldeClientId=clients.find(c=>c.name==="Sr. Waldemar")?.id;
   const darkClientId=clients.find(c=>c.name==="Canais Dark")?.id;
-  const wVideos=videos.filter(v=>v.client_id===waldeClientId);
-  const darkVideos=videos.filter(v=>v.client_id===darkClientId);
+  const intlClientIds=INTL_CHANNELS.map(ch=>clients.find(c=>c.name===ch.name)?.id).filter(Boolean);
+  // nicho serve de fallback de dono: vídeo criado quando o cliente ainda não existia não pode sumir do kanban
+  const isWaldeVideo=v=>v.client_id===waldeClientId||v.niche==="Sr. Waldemar";
+  const isIntlVideo=v=>intlClientIds.includes(v.client_id);
+  const wVideos=videos.filter(isWaldeVideo);
+  const darkVideos=videos.filter(v=>!isWaldeVideo(v)&&!isIntlVideo(v));
+  const stuckVideos=darkVideos.filter(v=>v.status!=="Postagem").sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).slice(0,3);
   const wIdeas=ideas.filter(i=>i.client_id===waldeClientId||i.niche==="Sr. Waldemar"||i.source==="waldemar");
-  const darkIdeas=ideas.filter(i=>!i.used&&i.client_id!==waldeClientId&&i.source!=="waldemar"&&i.niche!=="Sr. Waldemar");
+  const darkIdeas=ideas.filter(i=>!i.used&&i.client_id!==waldeClientId&&i.source!=="waldemar"&&i.niche!=="Sr. Waldemar"&&i.source!=="intl"&&!intlClientIds.includes(i.client_id));
 
   return (
     <div style={{background:BG,minHeight:"100vh",color:TEXT}}>
@@ -710,7 +726,7 @@ export default function DarkApp(){
               </div>
               <div style={card}>
                 <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",marginBottom:10,fontWeight:600}}>🎬 PIPELINE DARK</div>
-                {PIPELINE.map(s=>{const count=videos.filter(v=>v.status===s).length;const color=PIPELINE_COLORS[s];return(
+                {PIPELINE.map(s=>{const count=darkVideos.filter(v=>v.status===s).length;const color=PIPELINE_COLORS[s];return(
                   <div key={s} className="hr" style={{display:"flex",alignItems:"center",gap:8,padding:"5px 4px",borderBottom:"1px solid "+BOR,cursor:"pointer",borderRadius:4}} onClick={()=>setActiveTab(4)}>
                     <div style={{width:7,height:7,borderRadius:2,background:color,flexShrink:0}}/>
                     <span style={{fontFamily:"'DM Sans'",fontSize:12,flex:1}}>{s}</span>
@@ -1028,7 +1044,7 @@ export default function DarkApp(){
                 <div style={{overflowX:"auto",paddingBottom:8}}>
                   <div style={{display:"flex",gap:10,minWidth:"max-content"}}>
                     {PIPELINE.map(status=>{
-                      const colVids=(pipelineFilter==="todos"?videos:videos.filter(v=>v.status===pipelineFilter)).filter(v=>v.status===status);
+                      const colVids=(pipelineFilter==="todos"?darkVideos:darkVideos.filter(v=>v.status===pipelineFilter)).filter(v=>v.status===status);
                       const color=PIPELINE_COLORS[status];
                       return(
                         <div key={status} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const id=e.dataTransfer.getData("vid");if(id)moveVideo(id,status);}} style={{width:230,flexShrink:0,background:BG3,border:"1px solid "+BOR,borderRadius:10,overflow:"hidden",minHeight:260}}>
