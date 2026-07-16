@@ -38,17 +38,27 @@ const INTL_NICHES=[
 // Se a janela recente não tiver resultados (ex.: canal parado), cai pro all-time.
 const VIRAL_DAYS=90;
 const viralMap=v=>{const views=parseInt(v.statistics?.viewCount||0);const pub=v.snippet?.publishedAt?new Date(v.snippet.publishedAt):null;const ageDays=pub?Math.max(1,Math.round((Date.now()-pub)/86400000)):null;return{id:v.id,title:v.snippet?.title,channel:v.snippet?.channelTitle,thumb:v.snippet?.thumbnails?.medium?.url,views,url:"https://youtube.com/watch?v="+v.id,ageDays,vpd:ageDays?Math.round(views/ageDays):0};};
-const fetchViralList=async({apiKey,channelId,q,days=VIRAL_DAYS,max=10})=>{
+// Retorna as duas leituras do mesmo canal/busca: {viral} = últimos 90d por views/dia (hype),
+// {top} = all-time por views (assuntos validados). Uma chamada de stats só para os dois.
+const fetchRefLists=async({apiKey,channelId,q,days=VIRAL_DAYS,max=8})=>{
   const base="https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&order=viewCount&maxResults="+max+"&key="+apiKey+(channelId?"&channelId="+channelId:"")+(q?"&q="+encodeURIComponent(q):"");
   const after=new Date(Date.now()-days*86400000).toISOString();
-  let d=await(await fetch(base+"&publishedAfter="+encodeURIComponent(after))).json();
-  let items=d.items||[];
-  if(!items.length){d=await(await fetch(base)).json();items=d.items||[];}
-  const ids=items.map(i=>i.id?.videoId).filter(Boolean).join(",");
-  if(!ids)return[];
-  const sd=await(await fetch("https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id="+ids+"&key="+apiKey)).json();
-  return(sd.items||[]).map(viralMap).sort((a,b)=>b.vpd-a.vpd);
+  const[dRec,dTop]=await Promise.all([
+    fetch(base+"&publishedAfter="+encodeURIComponent(after)).then(r=>r.json()),
+    fetch(base).then(r=>r.json()),
+  ]);
+  const recIds=(dRec.items||[]).map(i=>i.id?.videoId).filter(Boolean);
+  const topIds=(dTop.items||[]).map(i=>i.id?.videoId).filter(Boolean);
+  const allIds=[...new Set([...recIds,...topIds])].join(",");
+  if(!allIds)return{viral:[],top:[]};
+  const sd=await(await fetch("https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id="+allIds+"&key="+apiKey)).json();
+  const byId={};(sd.items||[]).forEach(v=>{byId[v.id]=viralMap(v);});
+  return{
+    viral:recIds.map(id=>byId[id]).filter(Boolean).sort((a,b)=>b.vpd-a.vpd),
+    top:topIds.map(id=>byId[id]).filter(Boolean).sort((a,b)=>b.views-a.views),
+  };
 };
+const refListCount=l=>l?((l.viral?.length||0)+(l.top?.length||0)):0;
 const toLocalDate=d=>{const dt=new Date(d);return dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");};
 const today=()=>toLocalDate(new Date());
 const thisMonth=()=>new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0");
@@ -491,8 +501,8 @@ export default function DarkApp(){
     if(!apiKey||!ch.channel_id||trendingRefVideos[ch.id])return;
     setTrendingRefLoading(ch.id);
     try{
-      const list=await fetchViralList({apiKey,channelId:ch.channel_id});
-      setTrendingRefVideos(prev=>({...prev,[ch.id]:list}));
+      const lists=await fetchRefLists({apiKey,channelId:ch.channel_id});
+      setTrendingRefVideos(prev=>({...prev,[ch.id]:lists}));
     }catch(e){flashError("Erro ao buscar vídeos");}
     setTrendingRefLoading(null);
   };
@@ -504,8 +514,8 @@ export default function DarkApp(){
     if(!apiKey||wRefVideos[theme.name])return;
     setWRefLoading(theme.name);
     try{
-      const list=await fetchViralList({apiKey,q:theme.kw,max:8});
-      setWRefVideos(prev=>({...prev,[theme.name]:list}));
+      const lists=await fetchRefLists({apiKey,q:theme.kw});
+      setWRefVideos(prev=>({...prev,[theme.name]:lists}));
     }catch(e){flashError("Erro ao buscar referências");}
     setWRefLoading(null);
   };
@@ -568,8 +578,8 @@ export default function DarkApp(){
     if(!apiKey||intlRefVideos[niche.name])return;
     setIntlRefLoading(niche.name);
     try{
-      const list=await fetchViralList({apiKey,q:niche.keyword,max:8});
-      setIntlRefVideos(prev=>({...prev,[niche.name]:list}));
+      const lists=await fetchRefLists({apiKey,q:niche.keyword});
+      setIntlRefVideos(prev=>({...prev,[niche.name]:lists}));
     }catch(e){flashError("Erro ao buscar referências");}
     setIntlRefLoading(null);
   };
@@ -599,8 +609,8 @@ export default function DarkApp(){
     if(!apiKey||!ch.channel_id||channelVideos[ch.id])return;
     setChannelLoading(ch.id);
     try{
-      const list=await fetchViralList({apiKey,channelId:ch.channel_id});
-      setChannelVideos(prev=>({...prev,[ch.id]:list}));
+      const lists=await fetchRefLists({apiKey,channelId:ch.channel_id});
+      setChannelVideos(prev=>({...prev,[ch.id]:lists}));
     }catch(e){flashError("Erro ao buscar vídeos");}
     setChannelLoading(null);
   };
@@ -642,6 +652,17 @@ export default function DarkApp(){
       </div>
     </div>
   );
+
+  // listas de referência vêm em pares {viral, top}; renderiza as duas seções com o mesmo layout de linha
+  const renderRefLists=(lists,renderRow)=>{
+    if(!lists)return null;
+    if(Array.isArray(lists))lists={viral:lists,top:[]};
+    const hd={fontFamily:"'DM Sans'",fontSize:9,letterSpacing:1,textTransform:"uppercase",fontWeight:600,margin:"8px 0 2px"};
+    return(<>
+      {lists.viral?.length>0&&<div><div style={{...hd,color:RED}}>🔥 Em alta · 90 dias · views/dia</div>{lists.viral.slice(0,5).map((v,i)=>renderRow(v,i))}</div>}
+      {lists.top?.length>0&&<div><div style={{...hd,color:ACCENT}}>🏆 Mais vistos · todos os tempos</div>{lists.top.slice(0,5).map((v,i)=>renderRow(v,i))}</div>}
+    </>);
+  };
 
   // ─── RENDER ───────────────────────────────────────────────
   const urgentToday=pendingTasks.filter(t=>t.urgency==="hot"||deadlineDiff(t.deadline)<=0);
@@ -1142,7 +1163,7 @@ export default function DarkApp(){
                               <button onClick={()=>fetchChannelVideos(ch)} disabled={!!channelLoading} style={{...btnGhost,padding:"1px 6px",fontSize:9,color:ACCENT,borderColor:ACCENT+"33",opacity:channelLoading===ch.id?.5:1}}>{channelLoading===ch.id?"...":"▶"}</button>
                               <button onClick={()=>deleteRefChannel(ch.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:10}}>✕</button>
                             </div>
-                            {channelVideos[ch.id]&&channelVideos[ch.id].map((v,i)=>(
+                            {renderRefLists(channelVideos[ch.id],(v,i)=>(
                               <div key={v.id} style={{display:"flex",gap:5,padding:"4px 8px",borderTop:"1px solid "+BOR,alignItems:"center"}}>
                                 <span style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:HINT,width:14,flexShrink:0}}>{i+1}</span>
                                 {v.thumb&&<img src={v.thumb} alt="" style={{width:40,height:28,borderRadius:2,objectFit:"cover",flexShrink:0}}/>}
@@ -1190,8 +1211,8 @@ export default function DarkApp(){
                               </div>
                             </div>
                             {ch.notes&&<div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,marginBottom:7,lineHeight:1.5}}>{ch.notes}</div>}
-                            <button onClick={()=>fetchChannelVideos(ch)} disabled={!!channelLoading} style={{...btnGhost,width:"100%",fontSize:11,color:ACCENT,borderColor:ACCENT+"33",opacity:channelLoading===ch.id?.5:1}}>{channelLoading===ch.id?"Carregando...":channelVideos[ch.id]?"✓ "+channelVideos[ch.id].length+" vídeos":"🔥 Carregar virais"}</button>
-                            {channelVideos[ch.id]&&channelVideos[ch.id].slice(0,5).map((v,i)=>(
+                            <button onClick={()=>fetchChannelVideos(ch)} disabled={!!channelLoading} style={{...btnGhost,width:"100%",fontSize:11,color:ACCENT,borderColor:ACCENT+"33",opacity:channelLoading===ch.id?.5:1}}>{channelLoading===ch.id?"Carregando...":channelVideos[ch.id]?"✓ "+refListCount(channelVideos[ch.id])+" vídeos":"🔥🏆 Carregar vídeos"}</button>
+                            {renderRefLists(channelVideos[ch.id],(v,i)=>(
                               <div key={v.id} style={{display:"flex",gap:7,padding:"5px 0",borderTop:"1px solid "+BOR,alignItems:"center",marginTop:4}}>
                                 <span style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:HINT,width:14}}>{i+1}</span>
                                 <div style={{flex:1,minWidth:0}}>
@@ -1312,9 +1333,9 @@ export default function DarkApp(){
                     <div key={theme.name} style={{...card,marginBottom:0}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                         <div style={{fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:1,color:ACCENT}}>{theme.name}</div>
-                        <button onClick={()=>fetchWaldeRefVideos(theme)} disabled={wRefLoading===theme.name} style={{...btnGhost,fontSize:10,padding:"2px 8px",color:ACCENT,borderColor:ACCENT+"33",opacity:wRefLoading===theme.name?.5:1}}>{wRefLoading===theme.name?"...":wRefVideos[theme.name]?"✓ "+wRefVideos[theme.name].length:"▶ Buscar"}</button>
+                        <button onClick={()=>fetchWaldeRefVideos(theme)} disabled={wRefLoading===theme.name} style={{...btnGhost,fontSize:10,padding:"2px 8px",color:ACCENT,borderColor:ACCENT+"33",opacity:wRefLoading===theme.name?.5:1}}>{wRefLoading===theme.name?"...":wRefVideos[theme.name]?"✓ "+refListCount(wRefVideos[theme.name]):"▶ Buscar"}</button>
                       </div>
-                      {wRefVideos[theme.name]?.map((v,i)=>(
+                      {renderRefLists(wRefVideos[theme.name],(v,i)=>(
                         <div key={v.id} style={{display:"flex",gap:7,padding:"5px 0",borderBottom:"1px solid "+BOR,alignItems:"center"}}>
                           <span style={{fontFamily:"'IBM Plex Mono'",fontSize:9,color:HINT,width:14,flexShrink:0}}>{i+1}</span>
                           {v.thumb&&<img src={v.thumb} alt="" style={{width:48,height:34,borderRadius:3,objectFit:"cover",flexShrink:0}}/>}
@@ -1495,9 +1516,9 @@ export default function DarkApp(){
                           <div style={{fontFamily:"'Bebas Neue'",fontSize:15,letterSpacing:1,color:ACCENT}}>{niche.name}</div>
                           <div style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:MUTED}}>CPM EN: {niche.cpm}</div>
                         </div>
-                        <button onClick={()=>fetchIntlRefVideos(niche)} disabled={intlRefLoading===niche.name} style={{...btnGhost,fontSize:10,padding:"3px 10px",color:ACCENT,borderColor:ACCENT+"44",opacity:intlRefLoading===niche.name?.5:1}}>{intlRefLoading===niche.name?"...":intlRefVideos[niche.name]?"✓ "+intlRefVideos[niche.name].length:"▶ Buscar"}</button>
+                        <button onClick={()=>fetchIntlRefVideos(niche)} disabled={intlRefLoading===niche.name} style={{...btnGhost,fontSize:10,padding:"3px 10px",color:ACCENT,borderColor:ACCENT+"44",opacity:intlRefLoading===niche.name?.5:1}}>{intlRefLoading===niche.name?"...":intlRefVideos[niche.name]?"✓ "+refListCount(intlRefVideos[niche.name]):"▶ Buscar"}</button>
                       </div>
-                      {intlRefVideos[niche.name]?.map((v,i)=>(
+                      {renderRefLists(intlRefVideos[niche.name],(v,i)=>(
                         <div key={v.id} style={{display:"flex",gap:8,padding:"6px 0",borderBottom:"1px solid "+BOR,alignItems:"center"}}>
                           <span style={{fontFamily:"'Bebas Neue'",fontSize:14,color:HINT,width:18,flexShrink:0}}>{i+1}</span>
                           {v.thumb&&<img src={v.thumb} alt="" style={{width:52,height:37,borderRadius:3,objectFit:"cover",flexShrink:0}}/>}
@@ -1904,12 +1925,12 @@ export default function DarkApp(){
                             {ch.notes&&<div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED,marginTop:3}}>{ch.notes}</div>}
                           </div>
                           <div style={{display:"flex",gap:5,flexShrink:0}}>
-                            <button onClick={()=>fetchTrendingRefVideos(ch)} disabled={trendingRefLoading===ch.id} style={{...btnGhost,fontSize:11,padding:"3px 10px",color:ACCENT,borderColor:ACCENT+"44",opacity:trendingRefLoading===ch.id?.5:1}}>{trendingRefLoading===ch.id?"...":trendingRefVideos[ch.id]?"✓ "+trendingRefVideos[ch.id].length+" vídeos":"▶ Buscar"}</button>
+                            <button onClick={()=>fetchTrendingRefVideos(ch)} disabled={trendingRefLoading===ch.id} style={{...btnGhost,fontSize:11,padding:"3px 10px",color:ACCENT,borderColor:ACCENT+"44",opacity:trendingRefLoading===ch.id?.5:1}}>{trendingRefLoading===ch.id?"...":trendingRefVideos[ch.id]?"✓ "+refListCount(trendingRefVideos[ch.id])+" vídeos":"▶ Buscar"}</button>
                             <button onClick={()=>{setTrendingRefEdit({...ch});setTrendingRefModal(true);}} style={{...btnGhost,padding:"3px 6px",fontSize:10}}>✏️</button>
                             <button onClick={()=>deleteTrendingRefChannel(ch.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:12}}>✕</button>
                           </div>
                         </div>
-                        {trendingRefVideos[ch.id]?.map((v,i)=>(
+                        {renderRefLists(trendingRefVideos[ch.id],(v,i)=>(
                           <div key={v.id} style={{display:"flex",gap:8,padding:"6px 0",borderTop:"1px solid "+BOR,alignItems:"center"}}>
                             <span style={{fontFamily:"'Bebas Neue'",fontSize:14,color:HINT,width:22,flexShrink:0}}>{i+1}</span>
                             {v.thumb&&<img src={v.thumb} alt="" style={{width:56,height:40,borderRadius:3,objectFit:"cover",flexShrink:0}}/>}
