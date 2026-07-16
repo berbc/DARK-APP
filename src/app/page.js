@@ -19,6 +19,17 @@ const TASK_TYPES=["Roteiro","Gravação","Edição","Thumbnail","Revisão","Uplo
 const SCRIPT_SECTIONS=["GANCHO","CONSTRUÇÃO","A VIRADA","DESENVOLVIMENTO","DESFECHO","CTA"];
 const SECTION_COLORS={"GANCHO":"#F59E0B","CONSTRUÇÃO":ACCENT,"A VIRADA":BLUE,"DESENVOLVIMENTO":PURP,"DESFECHO":GREEN,"CTA":TEXT};
 const GOAL_TYPE_LABELS={"videos_mes":"Vídeos/mês","seguidores":"Seguidores (YT)","adsense_mes":"AdSense/mês","faturamento_mes":"Faturamento/mês","clientes":"Nº de clientes","views_mes":"Views/mês (YT)","personalizada":"Personalizada"};
+// Score de ideias D/S/V/E/R (sistema do higgsfield-explainer): cada sinal 1–5; ranking segue o total.
+const SCORE_KEYS=[
+  ["score_d","D","Demanda","As pessoas buscam isso AGORA? 5 = tema em alta ou clássico com ângulo novo · 1 = ninguém procura"],
+  ["score_s","S","Supply gap","Falta oferta? 5 = canais pequenos com vídeos gigantes (outliers = demanda maior que oferta) · 1 = mar de vídeos bons e recentes"],
+  ["score_v","V","Visual","A história se conta em CENAS? 5 = objetos, lugares, processos · 1 = abstração que pede talking head"],
+  ["score_e","E","Evergreen","Vale daqui a 2 anos? 5 = atemporal, views compostas · 1 = morre com a notícia"],
+  ["score_r","R","RPM","O anunciante paga bem? 5 = finanças/tech/educação · 1 = entretenimento genérico"],
+];
+const scoreTotal=i=>SCORE_KEYS.reduce((s,[k])=>s+(parseInt(i?.[k])||0),0);
+const scoreBand=t=>t>=20?{label:"🚀 Produzir já",color:"#10B981"}:t>=16?{label:"📅 Calendário",color:"#60A5FA"}:t>=12?{label:"📱 Short piloto",color:"#FBBF24"}:t>0?{label:"🗂 Arquivar",color:"#8A8A8E"}:null;
+const scoreLine=i=>SCORE_KEYS.map(([k,l])=>l+(i?.[k]||"–")).join("/");
 const YT_BENCH={cpm_br:8,views_per_video:5000,subs_per_1k:0.8};
 const DEFAULT_NICHES=[{name:"Curiosidades Gerais",keyword:"curiosidades fatos incríveis",cpm:"$4–8",active:true},{name:"Psicologia & Comportamento",keyword:"psicologia comportamento humano",cpm:"$8–15",active:true},{name:"Mistério & Paranormal",keyword:"misterio paranormal sobrenatural",cpm:"$5–9",active:true},{name:"True Crime",keyword:"crime real investigação",cpm:"$6–11",active:true},{name:"História Sombria",keyword:"historia sombria chocante",cpm:"$7–13",active:true},{name:"Ciência Sombria",keyword:"ciencia sombria experimentos",cpm:"$8–14",active:true},{name:"Filosofia Existencial",keyword:"filosofia existencial vida",cpm:"$10–18",active:true},{name:"Lendas Urbanas BR",keyword:"lendas urbanas brasil",cpm:"$4–7",active:true},{name:"Rise and Fall",keyword:"rise and fall company bankruptcy collapse business",cpm:"$8–19",active:true},{name:"Explainer",keyword:"how it works explained explainer science",cpm:"$6–16",active:true}];
 const FLAMENGO_CATEGORIES=[{name:"História",icon:"📜",color:RED},{name:"Jogadores Lendários",icon:"⚽",color:ACCENT},{name:"Partidas Históricas",icon:"🏆",color:GREEN},{name:"Mascote & Símbolos",icon:"🦅",color:ORANGE},{name:"Fundação & Origem",icon:"🏛",color:BLUE},{name:"Rivalidades",icon:"🔥",color:RED},{name:"Títulos",icon:"🥇",color:ACCENT},{name:"Curiosidades",icon:"💡",color:PURP}];
@@ -166,6 +177,7 @@ export default function DarkApp(){
   const [leadModal,setLeadModal]=useState(false);
   const [leadEdit,setLeadEdit]=useState(null);
   const [ideaModal,setIdeaModal]=useState(false);
+  const [scoreInfoModal,setScoreInfoModal]=useState(false);
   const [ideaEdit,setIdeaEdit]=useState(null);
   const [trendingTab,setTrendingTab]=useState("brasil");
   const [refChannelModal,setRefChannelModal]=useState(false);
@@ -442,8 +454,9 @@ export default function DarkApp(){
   const convertLead=async lead=>{const{data}=await supabase.from("clients").insert({name:lead.name,color:ACCENT,type:"YouTube",frequency:"",rate_per_hour:0,active:true,notes:lead.notes||""}).select().single();if(data){setClients(prev=>[...prev,data]);await supabase.from("leads").update({converted:true,client_id:data.id}).eq("id",lead.id);setLeads(prev=>prev.map(l=>l.id===lead.id?{...l,converted:true}:l));flash();}};
   const saveIdeaEdit=async()=>{
     if(!ideaEdit?.title?.trim())return;
-    if(ideaEdit.id){const r=await supabase.from("ideas").update(ideaEdit).eq("id",ideaEdit.id).select().single();if(r.data)setIdeas(prev=>prev.map(i=>i.id===r.data.id?r.data:i));}
-    else{const r=await supabase.from("ideas").insert(ideaEdit).select().single();if(r.data)setIdeas(prev=>[r.data,...prev]);}
+    const payload={...ideaEdit,score:scoreTotal(ideaEdit)};
+    if(ideaEdit.id){const r=await supabase.from("ideas").update(payload).eq("id",ideaEdit.id).select().single();if(r.data)setIdeas(prev=>prev.map(i=>i.id===r.data.id?r.data:i));}
+    else{const r=await supabase.from("ideas").insert(payload).select().single();if(r.data)setIdeas(prev=>[r.data,...prev]);}
     setIdeaModal(false);setIdeaEdit(null);flash();
   };
   const saveIdea=async(title,opts={})=>{const{data}=await supabase.from("ideas").insert({title,source:opts.source||"quick",niche:opts.niche||"",description:opts.description||"",client_id:opts.client_id||null}).select().single();if(data)setIdeas(prev=>[data,...prev]);flash();};
@@ -532,7 +545,7 @@ export default function DarkApp(){
 
   const intlClientId=(ch)=>clients.find(c=>c.name===INTL_CHANNELS.find(x=>x.key===ch)?.name)?.id;
   const getIntlVideos=(ch)=>videos.filter(v=>v.client_id===intlClientId(ch));
-  const getIntlIdeas=(ch)=>ideas.filter(i=>!i.used&&(i.client_id===intlClientId(ch)||i.niche===ch));
+  const getIntlIdeas=(ch)=>ideas.filter(i=>!i.used&&(i.client_id===intlClientId(ch)||i.niche===ch)).sort((a,b)=>scoreTotal(b)-scoreTotal(a));
   const createIntlVideo=async(ch)=>{
     const cId=intlClientId(ch);
     const chInfo=INTL_CHANNELS.find(x=>x.key===ch);
@@ -679,8 +692,10 @@ export default function DarkApp(){
   const wVideos=videos.filter(isWaldeVideo);
   const darkVideos=videos.filter(v=>!isWaldeVideo(v)&&!isIntlVideo(v));
   const stuckVideos=darkVideos.filter(v=>v.status!=="Postagem").sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).slice(0,3);
-  const wIdeas=ideas.filter(i=>i.client_id===waldeClientId||i.niche==="Sr. Waldemar"||i.source==="waldemar");
-  const darkIdeas=ideas.filter(i=>!i.used&&i.client_id!==waldeClientId&&i.source!=="waldemar"&&i.niche!=="Sr. Waldemar"&&i.source!=="intl"&&!intlClientIds.includes(i.client_id));
+  const wIdeas=ideas.filter(i=>i.client_id===waldeClientId||i.niche==="Sr. Waldemar"||i.source==="waldemar").sort((a,b)=>scoreTotal(b)-scoreTotal(a));
+  const darkIdeas=ideas.filter(i=>!i.used&&i.client_id!==waldeClientId&&i.source!=="waldemar"&&i.niche!=="Sr. Waldemar"&&i.source!=="intl"&&!intlClientIds.includes(i.client_id)).sort((a,b)=>scoreTotal(b)-scoreTotal(a));
+  // chip do score: mostra a nota e a faixa de decisão; clicar abre o card explicativo
+  const scoreChip=i=>{const t=scoreTotal(i);const b=scoreBand(t);if(!b)return null;return <span onClick={e=>{e.stopPropagation();setScoreInfoModal(true);}} title={scoreLine(i)+" = "+t+" — clique para entender o score"} style={{background:b.color+"20",color:b.color,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700,cursor:"help",flexShrink:0,whiteSpace:"nowrap"}}>{t} {b.label}</span>;};
 
   return (
     <div style={{background:BG,minHeight:"100vh",color:TEXT}}>
@@ -797,6 +812,7 @@ export default function DarkApp(){
                       <div style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.title}</div>
                       {(i.niche||i.description)&&<div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.niche||i.description}</div>}
                     </div>
+                    {scoreChip(i)}
                     <button onClick={()=>useIdeaAsVideo(i)} style={{...btnGhost,padding:"2px 7px",fontSize:10,color:GREEN,borderColor:GREEN+"33",flexShrink:0}}>usar →</button>
                     <button onClick={()=>deleteIdea(i.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:12}}>✕</button>
                   </div>
@@ -1098,7 +1114,10 @@ export default function DarkApp(){
                 <div style={card}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
                     <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:2}}>💡 BANCO DE IDEIAS</div>
-                    <button onClick={()=>{setIdeaEdit({title:"",description:"",niche:""});setIdeaModal(true);}} style={{...btnGhost,fontSize:11,padding:"3px 9px"}}>+ Nova</button>
+                    <div style={{display:"flex",gap:6}}>
+                      <button onClick={()=>setScoreInfoModal(true)} style={{...btnGhost,fontSize:11,padding:"3px 9px",color:ACCENT,borderColor:ACCENT+"44"}}>📊 Régua de score</button>
+                      <button onClick={()=>{setIdeaEdit({title:"",description:"",niche:""});setIdeaModal(true);}} style={{...btnGhost,fontSize:11,padding:"3px 9px"}}>+ Nova</button>
+                    </div>
                   </div>
                   <div style={{display:"flex",gap:8,marginBottom:12}}>
                     <input value={wInput} onChange={e=>setWInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&wInput.trim()){saveQuickIdea(wInput.trim());setWInput("");}}} placeholder="Nova ideia..." style={{...inp,flex:1}}/>
@@ -1110,6 +1129,7 @@ export default function DarkApp(){
                         <div style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.title}</div>
                         {i.niche&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:MUTED}}>{i.niche}</div>}
                       </div>
+                      {scoreChip(i)}
                       <button onClick={()=>useIdeaAsVideo(i)} style={{...btnGhost,padding:"2px 7px",fontSize:10,color:GREEN,borderColor:GREEN+"33",flexShrink:0}}>usar →</button>
                       <button onClick={()=>deleteIdea(i.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:12}}>✕</button>
                     </div>
@@ -1253,7 +1273,10 @@ export default function DarkApp(){
                 <div style={card}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
                     <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:2}}>💡 BANCO DE IDEIAS</div>
-                    <span style={{fontFamily:"'IBM Plex Mono'",fontSize:11,color:MUTED}}>{wIdeas.filter(i=>!i.used).length} ideias</span>
+                    <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                      <button onClick={()=>setScoreInfoModal(true)} style={{...btnGhost,fontSize:11,padding:"3px 9px",color:ACCENT,borderColor:ACCENT+"44"}}>📊 Régua de score</button>
+                      <span style={{fontFamily:"'IBM Plex Mono'",fontSize:11,color:MUTED}}>{wIdeas.filter(i=>!i.used).length} ideias</span>
+                    </div>
                   </div>
                   <div style={{display:"flex",gap:8,marginBottom:14}}>
                     <input value={wInput} onChange={e=>setWInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&wInput.trim()){saveWaldeIdea(wInput.trim());setWInput("");}}} placeholder="Nova ideia sobre Flamengo..." style={{...inp,flex:1}}/>
@@ -1266,10 +1289,11 @@ export default function DarkApp(){
                   )}
                   {wIdeas.filter(i=>!i.used).map(i=>(
                     <div key={i.id} className="hr" style={{display:"flex",alignItems:"center",gap:8,padding:"8px 5px",borderBottom:"1px solid "+BOR,borderRadius:4}}>
-                      <div style={{flex:1,minWidth:0}}>
+                      <div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={()=>{setIdeaEdit({...i});setIdeaModal(true);}}>
                         <div style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.title}</div>
                         {i.description&&<div style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:MUTED}}>{i.description}</div>}
                       </div>
+                      {scoreChip(i)}
                       <button onClick={()=>useWaldeIdeaAsVideo(i)} style={{...btnGhost,padding:"2px 7px",fontSize:10,color:GREEN,borderColor:GREEN+"33",flexShrink:0}}>usar →</button>
                       <button onClick={()=>deleteIdea(i.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:12}}>✕</button>
                     </div>
@@ -1472,9 +1496,10 @@ export default function DarkApp(){
                   {getIntlIdeas(activeChannel).length===0&&<div style={{fontFamily:"'DM Sans'",fontSize:13,color:MUTED,textAlign:"center",padding:20}}>Nenhuma ideia ainda.</div>}
                   {getIntlIdeas(activeChannel).map(i=>(
                     <div key={i.id} className="hr" style={{display:"flex",alignItems:"center",gap:8,padding:"8px 5px",borderBottom:"1px solid "+BOR,borderRadius:4}}>
-                      <div style={{flex:1,minWidth:0}}>
+                      <div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={()=>{setIdeaEdit({...i});setIdeaModal(true);}}>
                         <div style={{fontFamily:"'DM Sans'",fontSize:12,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.title}</div>
                       </div>
+                      {scoreChip(i)}
                       <button onClick={()=>useIntlIdeaAsVideo(i,activeChannel)} style={{...btnGhost,padding:"2px 7px",fontSize:10,color:GREEN,borderColor:GREEN+"33",flexShrink:0}}>usar →</button>
                       <button onClick={()=>deleteIdea(i.id)} style={{background:"none",border:"none",color:HINT,cursor:"pointer",fontSize:12}}>✕</button>
                     </div>
@@ -2024,7 +2049,64 @@ export default function DarkApp(){
       <div style={{marginBottom:12,gridColumn:"1/-1"}}><span style={lbl}>📐 CALCULADORA DE PROPOSTA</span><div style={{background:BG3,borderRadius:8,padding:14}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}><div><span style={{...lbl,marginBottom:4}}>Duração (min)</span><input type="number" value={leadEdit.video_minutes||0} step="0.5" min="0" onChange={e=>{const min=parseFloat(e.target.value)||0;const desc=leadEdit.discount_pct||0;const bruto=min*6000;const final=bruto*(1-desc/100);setLeadEdit({...leadEdit,video_minutes:min,bruto_value:bruto,proposed_value:Math.round(final)});}} style={inp} placeholder="3.5"/></div><div><span style={{...lbl,marginBottom:4}}>Desconto %</span><input type="number" value={leadEdit.discount_pct||0} min="0" max="100" onChange={e=>{const desc=parseFloat(e.target.value)||0;const min=leadEdit.video_minutes||0;const bruto=min*6000;const final=bruto*(1-desc/100);setLeadEdit({...leadEdit,discount_pct:desc,bruto_value:bruto,proposed_value:Math.round(final)});}} style={inp} placeholder="30"/></div><div><span style={{...lbl,marginBottom:4}}>Valor final</span><div style={{background:BG2,border:"1px solid "+ACCENT+"44",borderRadius:6,padding:"8px 12px",fontFamily:"'Bebas Neue'",fontSize:16,color:ACCENT}}>{fmtCurrency(leadEdit.proposed_value||0)}</div></div></div>{(leadEdit.video_minutes||0)>0&&<div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{leadEdit.video_minutes}min × R$6.000 = {fmtCurrency((leadEdit.video_minutes||0)*6000)}{(leadEdit.discount_pct||0)>0?" — "+leadEdit.discount_pct+"% = "+fmtCurrency(leadEdit.proposed_value||0):""}</div>}</div></div>
       <div style={{marginBottom:12}}><span style={lbl}>Status</span><select value={leadEdit.status||"novo"} onChange={e=>setLeadEdit({...leadEdit,status:e.target.value})} style={inp}>{["novo","proposta_enviada","em_negociacao","fechado","perdido"].map(s=><option key={s} value={s}>{s.replace(/_/g," ")}</option>)}</select></div><div style={{marginBottom:12}}><span style={lbl}>Nº alterações permitidas</span><input type="number" value={leadEdit.max_revisions||2} min="0" onChange={e=>setLeadEdit({...leadEdit,max_revisions:parseInt(e.target.value)||0})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Forma de pagamento</span><select value={leadEdit.payment_method||""} onChange={e=>setLeadEdit({...leadEdit,payment_method:e.target.value})} style={inp}><option value="">Selecionar...</option><option value="50_50">50% entrada + 50% entrega</option><option value="100_entrega">100% na entrega</option><option value="100_entrada">100% entrada</option><option value="parcelado">Parcelado</option></select></div><div style={{marginBottom:12}}><span style={lbl}>Prazo de entrega</span><input type="date" value={leadEdit.deadline||""} onChange={e=>setLeadEdit({...leadEdit,deadline:e.target.value})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Follow-up em</span><input type="date" value={leadEdit.follow_up_date||""} onChange={e=>setLeadEdit({...leadEdit,follow_up_date:e.target.value})} style={inp}/></div></div><div style={{marginBottom:12}}><span style={lbl}>Escopo <span style={{color:HINT,fontSize:9,textTransform:"none",letterSpacing:0}}>aparece na proposta</span></span><textarea value={leadEdit.escopo||""} onChange={e=>setLeadEdit({...leadEdit,escopo:e.target.value})} placeholder="- Animação de personagens&#10;- Criação de cenários&#10;- Edição do clipe" style={{...inp,minHeight:90,whiteSpace:"pre-wrap"}}/></div><div style={{marginBottom:14}}><span style={{...lbl,color:HINT}}>Notas internas</span><textarea value={leadEdit.notes||""} onChange={e=>setLeadEdit({...leadEdit,notes:e.target.value})} style={{...inp,minHeight:50}}/></div><div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setLeadModal(false);setLeadEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveLead} style={btnGold}>SALVAR</button></div></div></div>}
 
-      {ideaModal&&ideaEdit&&<div onClick={e=>e.target===e.currentTarget&&(setIdeaModal(false),setIdeaEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:460,padding:26}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>{ideaEdit.id?"EDITAR IDEIA":"NOVA IDEIA"}</div><button onClick={()=>{setIdeaModal(false);setIdeaEdit(null);}} style={btnGhost}>✕</button></div><div style={{marginBottom:12}}><span style={lbl}>Título</span><input value={ideaEdit.title||""} onChange={e=>setIdeaEdit({...ideaEdit,title:e.target.value})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Nicho</span><select value={ideaEdit.niche||""} onChange={e=>setIdeaEdit({...ideaEdit,niche:e.target.value})} style={inp}><option value="">Geral</option>{activeNiches.map(n=><option key={n.id}>{n.name}</option>)}</select></div><div style={{marginBottom:14}}><span style={lbl}>Descrição</span><textarea value={ideaEdit.description||""} onChange={e=>setIdeaEdit({...ideaEdit,description:e.target.value})} style={{...inp,minHeight:80}}/></div><div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setIdeaModal(false);setIdeaEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveIdeaEdit} style={btnGold}>SALVAR</button></div></div></div>}
+      {ideaModal&&ideaEdit&&<div onClick={e=>e.target===e.currentTarget&&(setIdeaModal(false),setIdeaEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:460,padding:26}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>{ideaEdit.id?"EDITAR IDEIA":"NOVA IDEIA"}</div><button onClick={()=>{setIdeaModal(false);setIdeaEdit(null);}} style={btnGhost}>✕</button></div><div style={{marginBottom:12}}><span style={lbl}>Título</span><input value={ideaEdit.title||""} onChange={e=>setIdeaEdit({...ideaEdit,title:e.target.value})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Nicho</span><select value={ideaEdit.niche||""} onChange={e=>setIdeaEdit({...ideaEdit,niche:e.target.value})} style={inp}><option value="">Geral</option>{activeNiches.map(n=><option key={n.id}>{n.name}</option>)}</select></div><div style={{marginBottom:14}}><span style={lbl}>Descrição</span><textarea value={ideaEdit.description||""} onChange={e=>setIdeaEdit({...ideaEdit,description:e.target.value})} style={{...inp,minHeight:80}}/></div>
+      <div style={{marginBottom:14,background:BG3,borderRadius:8,padding:"12px 14px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+          <span style={{...lbl,marginBottom:0}}>Score D/S/V/E/R</span>
+          <button onClick={()=>setScoreInfoModal(true)} style={{...btnGhost,fontSize:10,padding:"2px 8px",color:ACCENT,borderColor:ACCENT+"44"}}>ℹ️ o que é cada nota?</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6,marginBottom:10}}>
+          {SCORE_KEYS.map(([k,letter,name])=>(
+            <div key={k}>
+              <div style={{...lbl,fontSize:9,marginBottom:3}} title={name}>{letter}</div>
+              <select value={ideaEdit[k]||""} onChange={e=>setIdeaEdit({...ideaEdit,[k]:e.target.value?parseInt(e.target.value):null})} style={{...inp,padding:"6px 8px",textAlign:"center"}}>
+                <option value="">–</option>{[1,2,3,4,5].map(n=><option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
+        {(()=>{const t=scoreTotal(ideaEdit);const b=scoreBand(t);return(
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontFamily:"'Bebas Neue'",fontSize:20,color:b?b.color:HINT}}>{t||"—"} <span style={{fontSize:12,color:MUTED}}>/ 25</span></span>
+            {b&&<span style={{background:b.color+"20",color:b.color,borderRadius:5,padding:"3px 10px",fontSize:11,fontWeight:700}}>{b.label}</span>}
+            <span style={{fontFamily:"'IBM Plex Mono'",fontSize:10,color:HINT,marginLeft:"auto"}}>{scoreLine(ideaEdit)}</span>
+          </div>
+        );})()}
+      </div>
+      <div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setIdeaModal(false);setIdeaEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveIdeaEdit} style={btnGold}>SALVAR</button></div></div></div>}
+
+      {scoreInfoModal&&(
+        <div onClick={e=>e.target===e.currentTarget&&setScoreInfoModal(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:250,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:14,width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto",padding:28}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:22,letterSpacing:2}}>SCORE D/S/V/E/R</div>
+              <button onClick={()=>setScoreInfoModal(false)} style={btnGhost}>✕</button>
+            </div>
+            <div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED,marginBottom:18}}>Cada ideia recebe nota 1–5 em 5 sinais. O total (5–25) decide o destino do vídeo — o ranking segue o score, não o achismo.</div>
+            {SCORE_KEYS.map(([k,letter,name,desc])=>(
+              <div key={k} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid "+BOR,alignItems:"flex-start"}}>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:ACCENT,width:26,flexShrink:0,textAlign:"center"}}>{letter}</div>
+                <div><div style={{fontFamily:"'DM Sans'",fontSize:13,fontWeight:600,marginBottom:2}}>{name}</div>
+                <div style={{fontFamily:"'DM Sans'",fontSize:12,color:MUTED,lineHeight:1.5}}>{desc}</div></div>
+              </div>
+            ))}
+            <div style={{fontFamily:"'DM Sans'",fontSize:10,color:MUTED,letterSpacing:1,textTransform:"uppercase",margin:"18px 0 10px",fontWeight:600}}>Régua de decisão (o total manda)</div>
+            {[["20–25","🚀 Produzir já","O sinal é forte em tudo. Vai direto pra fila de produção.","#10B981"],
+              ["16–19","📅 Calendário","Bom vídeo, sem urgência. Entra no calendário editorial.","#60A5FA"],
+              ["12–15","📱 Short piloto primeiro","Testa barato: publica um Short do tema (funil invertido). Se performar, vira longo.","#FBBF24"],
+              ["5–11","🗂 Arquivar","Não vale crédito agora. Fica registrado — score pode mudar se o mundo mudar.","#8A8A8E"]].map(([range,label,desc,color])=>(
+              <div key={range} style={{display:"flex",gap:12,padding:"9px 12px",marginBottom:6,background:color+"10",border:"1px solid "+color+"33",borderRadius:8,alignItems:"center"}}>
+                <span style={{fontFamily:"'IBM Plex Mono'",fontSize:13,fontWeight:700,color,width:52,flexShrink:0}}>{range}</span>
+                <div><div style={{fontFamily:"'DM Sans'",fontSize:13,fontWeight:600,color}}>{label}</div>
+                <div style={{fontFamily:"'DM Sans'",fontSize:11,color:MUTED}}>{desc}</div></div>
+              </div>
+            ))}
+            <div style={{marginTop:14,padding:"10px 14px",background:RED+"10",border:"1px solid "+RED+"33",borderRadius:8,fontFamily:"'DM Sans'",fontSize:12,color:MUTED,lineHeight:1.6}}>
+              <b style={{color:RED}}>Regra de ouro:</b> score sem pesquisa viva não vale — a nota vem de evidência real (busca, outliers, RPM), nunca de memória. E fato sem fonte não entra no roteiro.
+            </div>
+          </div>
+        </div>
+      )}
 
       {nicheModal&&nicheEdit&&<div onClick={e=>e.target===e.currentTarget&&(setNicheModal(false),setNicheEdit(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:BG2,border:"1px solid "+BOR2,borderRadius:12,width:"100%",maxWidth:440,padding:26}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2}}>{nicheEdit.id?"EDITAR NICHO":"NOVO NICHO"}</div><button onClick={()=>{setNicheModal(false);setNicheEdit(null);}} style={btnGhost}>✕</button></div><div style={{marginBottom:12}}><span style={lbl}>Nome do nicho</span><input value={nicheEdit.name||""} onChange={e=>setNicheEdit({...nicheEdit,name:e.target.value})} style={inp}/></div><div style={{marginBottom:12}}><span style={lbl}>Palavra-chave</span><input value={nicheEdit.keyword||""} onChange={e=>setNicheEdit({...nicheEdit,keyword:e.target.value})} style={inp}/></div><div style={{marginBottom:14}}><span style={lbl}>CPM estimado</span><input value={nicheEdit.cpm||""} onChange={e=>setNicheEdit({...nicheEdit,cpm:e.target.value})} placeholder="$6–11" style={inp}/></div><div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={()=>{setNicheModal(false);setNicheEdit(null);}} style={btnGhost}>Cancelar</button><button onClick={saveNiche} style={btnGold}>SALVAR</button></div></div></div>}
 
